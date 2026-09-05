@@ -5,7 +5,9 @@ use crate::util::now_epoch_millis;
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, BufReader, BufWriter, Write as IoWrite};
+#[cfg(windows)]
+use std::io;
+use std::io::{BufRead, BufReader, BufWriter, Write as IoWrite};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -365,7 +367,8 @@ pub fn atomic_replace(temp_path: &Path, dest_path: &Path) -> Result<()> {
 
 #[cfg(not(windows))]
 pub fn atomic_replace(temp_path: &Path, dest_path: &Path) -> Result<()> {
-    fs::rename(temp_path, dest_path)
+    fs::rename(temp_path, dest_path)?;
+    Ok(())
 }
 
 /// What one compaction pass observed, so no caller has to re-read either file to learn it.

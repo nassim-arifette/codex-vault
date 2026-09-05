@@ -6,7 +6,13 @@ CLI Windows pour sauvegarder, compacter et restaurer les conversations Codex ave
 
 Pour Windows x86_64, telecharger le ZIP et `SHA256SUMS.txt` depuis les
 [releases](https://github.com/nassim-arifette/codex-vault/releases). Verifier le SHA-256 du ZIP avec
-`Get-FileHash`, extraire le ZIP puis lancer `install.ps1`. Ouvrir un nouveau terminal :
+`Get-FileHash`, extraire le ZIP puis, dans le dossier extrait, lancer :
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Ouvrir un nouveau terminal :
 
 ```powershell
 codex-vault --help
