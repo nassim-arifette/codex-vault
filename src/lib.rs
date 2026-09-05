@@ -14,6 +14,7 @@ pub mod fsatomic;
 pub mod hashing;
 pub mod index;
 pub mod manifest;
+pub mod mcp;
 pub mod ops;
 pub mod parallel;
 pub mod paths;

@@ -90,6 +90,24 @@ The database lives in the Vault directory as `index.sqlite`; SQLite is bundled i
 `index --status` reports the index size, retained vault bytes and coverage. All indexed content
 remains local; publishing the repository does not publish your index or conversations.
 
+## Use from Codex through MCP
+
+Build the index first, then register the installed executable with Codex:
+
+```powershell
+codex-vault index --cwd C:\path\to\project
+codex mcp add codex-vault -- codex-vault mcp --cwd C:\path\to\project
+```
+
+Use the absolute executable path in the registration command if it is not on `PATH`.
+The stdio server exposes only `vault_search` and `vault_read`. It never indexes or modifies
+transcripts, archives or the database. Its optional `--cwd` is an upper bound: tool arguments
+can narrow that scope but cannot widen it. Returned history is explicitly marked as untrusted
+data, with verified source references. Re-run the CLI `index` command to refresh the snapshot.
+
+The server supports MCP protocol versions `2025-11-25`, `2025-06-18` and `2025-03-26`.
+There is no HTTP listener or separate database service. CLI commands remain usable without MCP.
+
 ## Why the cutoff is conservative
 
 Current Codex reconstruction code has a bounded reverse scan. A safe suffix requires both a compaction checkpoint with `replacement_history` + `window_number` and sufficient completed-turn context. A compaction missing either field, or a rollback marker in the required suffix, forces a scan back to the beginning. The MVP mirrors those conditions rather than assuming that “latest `compacted` line” is always enough.

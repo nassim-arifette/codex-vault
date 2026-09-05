@@ -47,6 +47,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Serve read-only history search over MCP stdio for Codex and other MCP clients.
+    Mcp {
+        /// Limit every MCP search/read to this project and its subdirectories.
+        #[arg(long)]
+        cwd: Option<String>,
+    },
     /// Build or refresh the local full-text index of conversations and verified archives.
     Index {
         /// Restrict updates to this project and its subdirectories.
@@ -212,6 +218,7 @@ fn print_json<T: Serialize>(value: &T, stream: &mut dyn IoWrite, compact: bool) 
 
 fn run(command: Command, batch: BatchOptions) -> Result<Value> {
     match command {
+        Command::Mcp { .. } => unreachable!("MCP uses its own stdio transport"),
         Command::Index {
             cwd,
             rebuild,
@@ -311,6 +318,19 @@ fn run(command: Command, batch: BatchOptions) -> Result<Value> {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let Some(Command::Mcp { cwd }) = &cli.command {
+        return match codex_vault::mcp::serve(
+            io::stdin().lock(),
+            io::stdout().lock(),
+            cwd.as_deref().map(std::path::Path::new),
+        ) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("{err}");
+                ExitCode::from(err.exit_code())
+            }
+        };
+    }
     let menu_cwd = match &cli.command {
         Some(Command::Menu { cwd }) => Some(cwd.clone()),
         None if io::stdin().is_terminal() && io::stdout().is_terminal() => Some(None),

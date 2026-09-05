@@ -409,6 +409,91 @@ fn failed_index_update_preserves_previous_search_results() {
 }
 
 #[test]
+fn mcp_handshake_tools_and_project_scope_are_read_only() {
+    let sb = CliSandbox::new();
+    sb.add_historical_message();
+    sb.ok(&["index"]);
+    let id = sb.ok(&["search", "authentication"])["matches"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let native = fs::read(&sb.session).unwrap();
+    let database = fs::read(sb.dir.path().join("vault/index.sqlite")).unwrap();
+    let messages = [
+        json!({"jsonrpc":"2.0","id":0,"method":"tools/list"}),
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"synthetic-client","version":"1"}}}),
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
+        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vault_search","arguments":{"query":"authentication"}}}),
+        json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vault_read","arguments":{"id":id}}}),
+        json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vault_search","arguments":{"query":"authentication","cwd":"C:/"}}}),
+        json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"compact","arguments":{}}}),
+        json!({"jsonrpc":"2.0","id":7,"method":"compact"}),
+        json!({"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"vault_search","arguments":{"query":"authentication","unexpected":"refuse"}}}),
+    ];
+    let input = messages
+        .iter()
+        .map(|m| format!("{m}\n"))
+        .collect::<String>();
+    let result = sb.run(&["mcp", "--cwd", "C:/sample project"], Some(&input));
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let responses: Vec<Value> = String::from_utf8(result.stdout)
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert_eq!(responses.len(), 9);
+    assert_eq!(responses[0]["error"]["code"], -32002);
+    assert_eq!(responses[1]["result"]["protocolVersion"], "2025-11-25");
+    let tools = responses[2]["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 2);
+    assert!(tools
+        .iter()
+        .all(|t| t["annotations"]["readOnlyHint"] == true));
+    assert_eq!(
+        responses[3]["result"]["structuredContent"]["matches"][0]["id"],
+        id
+    );
+    assert_eq!(
+        responses[4]["result"]["structuredContent"]["text"],
+        "Decision: authentication uses rotating refresh tokens. Café 🦀"
+    );
+    assert_eq!(responses[5]["result"]["isError"], true);
+    assert_eq!(responses[6]["error"]["code"], -32602);
+    assert_eq!(responses[7]["error"]["code"], -32601);
+    assert_eq!(responses[8]["result"]["isError"], true);
+    assert_eq!(fs::read(&sb.session).unwrap(), native);
+    assert_eq!(
+        fs::read(sb.dir.path().join("vault/index.sqlite")).unwrap(),
+        database
+    );
+}
+
+#[test]
+fn mcp_reports_parse_errors_and_bounds_request_size() {
+    let sb = CliSandbox::new();
+    let result = sb.run(
+        &["mcp"],
+        Some("broken json\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n"),
+    );
+    assert!(result.status.success());
+    let frames: Vec<Value> = String::from_utf8(result.stdout)
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert_eq!(frames[0]["error"]["code"], -32700);
+    assert_eq!(frames[1]["result"], json!({}));
+    assert!(!sb.dir.path().join("vault").exists());
+    let large = "x".repeat(1024 * 1024 + 1);
+    assert_eq!(sb.run(&["mcp"], Some(&large)).status.code(), Some(2));
+}
+
+#[test]
 fn oversized_records_are_counted_without_losing_following_references() {
     let sb = CliSandbox::new();
     let mut file = fs::OpenOptions::new()
