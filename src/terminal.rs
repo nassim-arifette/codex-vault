@@ -130,6 +130,31 @@ pub fn render(value: &Value) {
         println!("Sauvegarde : {}", clean(backup));
     }
     if let Some(stats) = value.get("stats") {
+        if let Some(storage) = stats.get("storage") {
+            let net = storage["net_saved_bytes"].as_i64().unwrap_or(0);
+            println!(
+                "Gain net, sauvegardes et journaux compris : {}{}",
+                if net < 0 { "-" } else { "" },
+                format_size(net.unsigned_abs())
+            );
+            if storage["space_increased"] == true {
+                println!("Attention : cette operation augmente l'espace total occupe.");
+            }
+        }
+        if let Some(plan) = stats.get("storage_preview") {
+            let net = plan["estimated_net_saved_bytes_excluding_metadata"]
+                .as_i64()
+                .unwrap_or(0);
+            println!(
+                "Nouvelle sauvegarde : {}. Gain net estime : {}{} (hors croissance du journal).",
+                format_size(plan["new_backup_bytes"].as_u64().unwrap_or(0)),
+                if net < 0 { "-" } else { "" },
+                format_size(net.unsigned_abs())
+            );
+            if plan["may_increase_usage"] == true {
+                println!("Attention : le total peut augmenter, sauvegarde comprise.");
+            }
+        }
         if let (Some(before), Some(after)) =
             (stats["input_size"].as_u64(), stats["result_size"].as_u64())
         {
@@ -212,15 +237,14 @@ fn conversation(path: &Path) -> Result<()> {
                     render(&json!({"analysis": analysis}));
                     continue;
                 }
-                println!(
-                    "{} → {}. Une sauvegarde exacte sera verifiee avant remplacement.",
-                    format_size(analysis.original_size_bytes),
-                    format_size(
-                        analysis
-                            .estimated_result_size_bytes
-                            .unwrap_or(analysis.original_size_bytes)
-                    )
-                );
+                let preview = codex_vault::ops::compact_safe_impl_with(
+                    path,
+                    codex_vault::ops::CompactOptions {
+                        dry_run: true,
+                        ..Default::default()
+                    },
+                )?;
+                render(&json!(preview));
                 if prompt("Compacter cette conversation ? [o/N] > ")?
                     .is_some_and(|s| s.eq_ignore_ascii_case("o"))
                 {

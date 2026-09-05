@@ -86,8 +86,11 @@ enum Command {
         force: bool,
     },
     /// Keep canonical SessionMeta + the bounded reconstruction suffix, after a verified backup.
-    #[command(name = "compact-safe", alias = "compact")]
+    #[command(name = "compact-safe", visible_alias = "compact")]
     CompactSafe {
+        /// Preview the net saving, including the compressed backup, without writing files.
+        #[arg(long)]
+        dry_run: bool,
         #[arg(value_name = "SESSION", conflicts_with = "session_flag")]
         session: Option<String>,
         #[arg(long = "session")]
@@ -196,6 +199,7 @@ fn run(command: Command, batch: BatchOptions) -> Result<Value> {
             force,
         ),
         Command::CompactSafe {
+            dry_run,
             session,
             session_flag,
             cwd,
@@ -205,6 +209,7 @@ fn run(command: Command, batch: BatchOptions) -> Result<Value> {
             session.or(session_flag),
             cwd,
             CompactOptions {
+                dry_run,
                 scan_window,
                 allow_spawned_threads,
             },

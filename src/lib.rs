@@ -17,4 +17,5 @@ pub mod ops;
 pub mod parallel;
 pub mod paths;
 pub mod rollout;
+pub mod storage;
 pub mod util;

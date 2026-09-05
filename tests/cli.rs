@@ -172,3 +172,97 @@ fn busy_batch_returns_nonzero_and_a_stable_error_code() {
         "session_locked"
     );
 }
+
+#[test]
+fn dry_run_predicts_backup_bytes_without_creating_a_vault() {
+    let sb = CliSandbox::new();
+    let original = fs::read(&sb.session).unwrap();
+    let preview = sb.run(&["--json", "compact", "cli-test", "--dry-run"], None);
+    assert!(
+        preview.status.success(),
+        "{}",
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    let plan = CliSandbox::value(&preview);
+    assert_eq!(plan["status"], "preview");
+    assert_eq!(fs::read(&sb.session).unwrap(), original);
+    assert!(!sb.dir.path().join("vault").exists());
+    let actual = CliSandbox::value(&sb.run(&["--json", "compact", "cli-test"], None));
+    let backup = PathBuf::from(actual["backup"].as_str().unwrap());
+    assert_eq!(
+        plan["stats"]["storage_preview"]["new_backup_bytes"],
+        fs::metadata(backup).unwrap().len()
+    );
+    let disk_after = fs::metadata(&sb.session).unwrap().len()
+        + codex_vault::storage::directory_bytes(&sb.dir.path().join("vault")).unwrap();
+    assert_eq!(
+        actual["stats"]["storage"]["net_saved_bytes"]
+            .as_i64()
+            .unwrap(),
+        original.len() as i64 - disk_after as i64
+    );
+    // Tiny transcripts cost more to back up and journal than they save.
+    assert_eq!(actual["stats"]["storage"]["space_increased"], true);
+}
+
+#[test]
+fn multiple_compactions_preserve_each_cycle_and_account_for_retained_snapshots() {
+    let sb = CliSandbox::new();
+    let original = fs::read(&sb.session).unwrap();
+    assert!(sb.run(&["compact", "cli-test"], None).status.success());
+    let first_backup_bytes =
+        codex_vault::storage::directory_bytes(&sb.dir.path().join("vault/backups")).unwrap();
+    let mut growing = fs::OpenOptions::new()
+        .append(true)
+        .open(&sb.session)
+        .unwrap();
+    for record in [
+        json!({"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"synthetic retained detail ".repeat(3000)}]}}),
+        json!({"type":"compacted","payload":{"replacement_history":[{"role":"user"}],"window_number":4}}),
+        json!({"type":"event_msg","payload":{"type":"turn_started","turn_id":"cycle-two"}}),
+        json!({"type":"turn_context","payload":{"turn_id":"cycle-two","model":"gpt"}}),
+        json!({"type":"event_msg","payload":{"type":"user_message","message":"continue synthetic project"}}),
+        json!({"type":"event_msg","payload":{"type":"turn_complete","turn_id":"cycle-two"}}),
+    ] {
+        writeln!(growing, "{record}").unwrap();
+    }
+    drop(growing);
+    let grown = fs::read(&sb.session).unwrap();
+    let vault_before = codex_vault::storage::directory_bytes(&sb.dir.path().join("vault")).unwrap();
+    let second = sb.run(&["--json", "compact", "cli-test"], None);
+    assert!(
+        second.status.success(),
+        "{}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+    let report = CliSandbox::value(&second);
+    let vault_after = codex_vault::storage::directory_bytes(&sb.dir.path().join("vault")).unwrap();
+    let native_after = fs::metadata(&sb.session).unwrap().len();
+    assert_eq!(
+        report["stats"]["storage"]["net_saved_bytes"]
+            .as_i64()
+            .unwrap(),
+        (grown.len() as i64 + vault_before as i64) - (native_after as i64 + vault_after as i64)
+    );
+    assert!(
+        report["stats"]["storage"]["after"]["backup_bytes"]
+            .as_u64()
+            .unwrap()
+            > first_backup_bytes
+    );
+    println!("synthetic-cycle-two: native_before={} native_after={} vault_before={} vault_after={} net_saved={}", grown.len(), native_after, vault_before, vault_after, report["stats"]["storage"]["net_saved_bytes"]);
+    let no_op = CliSandbox::value(&sb.run(&["--json", "compact", "cli-test"], None));
+    assert_eq!(no_op["status"], "already_compact");
+    assert_eq!(no_op["stats"]["storage"]["net_saved_bytes"], 0);
+    assert!(sb.run(&["restore", "cli-test"], None).status.success());
+    assert_eq!(fs::read(&sb.session).unwrap(), grown);
+    assert!(sb
+        .run(&["restore", "cli-test", "--original"], None)
+        .status
+        .success());
+    assert_eq!(fs::read(&sb.session).unwrap(), original);
+    assert!(sb
+        .run(&["doctor", "cli-test", "--deep"], None)
+        .status
+        .success());
+}

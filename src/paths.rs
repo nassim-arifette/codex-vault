@@ -104,14 +104,18 @@ pub fn detect_codex_version() -> Option<String> {
         .clone()
 }
 
-pub fn ensure_vault_paths() -> Result<VaultPaths> {
+pub fn vault_paths() -> VaultPaths {
     let root = vault_root();
-    let paths = VaultPaths {
+    VaultPaths {
         root: root.clone(),
         manifests: root.join("manifests"),
         summaries: root.join("summaries"),
         backups: root.join("backups"),
-    };
+    }
+}
+
+pub fn ensure_vault_paths() -> Result<VaultPaths> {
+    let paths = vault_paths();
     fs::create_dir_all(&paths.root)?;
     fs::create_dir_all(&paths.manifests)?;
     fs::create_dir_all(&paths.summaries)?;

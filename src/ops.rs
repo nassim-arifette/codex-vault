@@ -354,6 +354,8 @@ pub fn archive_impl(path: &Path, force: bool) -> Result<CommandResult> {
 /// Knobs for one compaction.
 #[derive(Clone, Copy, Debug)]
 pub struct CompactOptions {
+    /// Estimate compressed backup size without creating files or replacing the transcript.
+    pub dry_run: bool,
     /// How far back the reverse walk may look; see [`DEFAULT_SCAN_WINDOW`].
     pub scan_window: usize,
     /// Compact rollouts belonging to threads Codex spawned.
@@ -369,6 +371,7 @@ pub struct CompactOptions {
 impl Default for CompactOptions {
     fn default() -> Self {
         CompactOptions {
+            dry_run: false,
             scan_window: DEFAULT_SCAN_WINDOW,
             allow_spawned_threads: false,
         }
@@ -391,9 +394,44 @@ pub fn compact_safe_impl_within(path: &Path, window: usize) -> Result<CommandRes
 
 pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<CommandResult> {
     ensure_plain_native_session(path)?;
-    let vault = ensure_vault_paths()?;
-    let _operation = MutationGuard::acquire(&vault.root, path)?;
+    let vault = if options.dry_run {
+        crate::paths::vault_paths()
+    } else {
+        ensure_vault_paths()?
+    };
+    let _operation = if options.dry_run {
+        None
+    } else {
+        Some(MutationGuard::acquire(&vault.root, path)?)
+    };
     let _source_lock = lock_session(path)?;
+    let before = crate::storage::StorageSnapshot::read(path, &vault)?;
+    let mut result = compact_locked(path, options, &vault)?;
+    if !options.dry_run {
+        match crate::storage::StorageSnapshot::read(path, &vault) {
+            Ok(after) => {
+                let delta = before.delta(&after);
+                if delta["space_increased"] == true {
+                    result.reason.push(
+                        "Total storage increased after including retained backups and journals."
+                            .into(),
+                    );
+                }
+                result.stats["storage"] = delta;
+            }
+            Err(err) => result.reason.push(format!(
+                "Operation finished, but storage accounting failed: {err}"
+            )),
+        }
+    }
+    Ok(result)
+}
+
+fn compact_locked(
+    path: &Path,
+    options: CompactOptions,
+    vault: &VaultPaths,
+) -> Result<CommandResult> {
     let head = read_session_head(path)?;
     if head.provenance.is_spawned_thread() && !options.allow_spawned_threads {
         return Err(VaultError::SpawnedThreadRefused {
@@ -411,8 +449,29 @@ pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<Co
         });
     }
     let session_id = head.session_id.clone();
-    let journal = open_journal(&vault, path, &session_id)?;
+    let journal = open_journal(vault, path, &session_id)?;
     let analysis = analyze_session_within(path, options.scan_window)?;
+
+    if options.dry_run {
+        let result_size = analysis
+            .estimated_result_size_bytes
+            .filter(|_| analysis.can_compact)
+            .unwrap_or(analysis.original_size_bytes);
+        return Ok(CommandResult {
+            status: "preview".into(),
+            session: path.to_string_lossy().into(),
+            manifest: None,
+            backup: None,
+            reason: analysis.reasons.clone(),
+            stats: crate::storage::preview(
+                path,
+                journal.manifest.as_ref(),
+                &analysis.content_sha256,
+                result_size,
+                !analysis.can_compact || analysis.estimated_removed_bytes != Some(0),
+            )?,
+        });
+    }
 
     if analysis.can_compact && analysis.estimated_removed_bytes == Some(0) {
         return Ok(CommandResult {
@@ -421,7 +480,7 @@ pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<Co
             manifest: journal
                 .manifest
                 .as_ref()
-                .map(|_| manifest_path(&vault, &journal.key)),
+                .map(|_| manifest_path(vault, &journal.key)),
             backup: None,
             reason: vec![
                 "nothing to compact: this transcript already contains only the required suffix"
@@ -435,7 +494,7 @@ pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<Co
         // Safety fallback from the MVP spec: archive the exact current transcript, but do not
         // remove a single native JSONL record when a bounded cutoff cannot be proven.
         let (archived, is_new) =
-            archive_current_locked(path, &journal.key, &vault, &analysis.content_sha256)?;
+            archive_current_locked(path, &journal.key, vault, &analysis.content_sha256)?;
         let original = journal
             .manifest
             .as_ref()
@@ -470,8 +529,8 @@ pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<Co
             Some(archived.clone()),
             Some("no bounded cutoff could be proven; transcript left unchanged".to_string()),
         );
-        let manifest_file = write_manifest(&journal.key, &vault, &manifest)?;
-        let _ = write_summary(&journal.key, &vault, &manifest);
+        let manifest_file = write_manifest(&journal.key, vault, &manifest)?;
+        let _ = write_summary(&journal.key, vault, &manifest);
         return Ok(CommandResult {
             status: "archived_only".to_string(),
             session: path.to_string_lossy().to_string(),
@@ -487,7 +546,7 @@ pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<Co
     let backup = ensure_backup_for_compaction(
         path,
         &journal.key,
-        &vault,
+        vault,
         &analysis.content_sha256,
         journal.manifest.as_ref(),
     )?;
@@ -602,7 +661,7 @@ pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<Co
 
     // Persist the recovery journal *before* the destructive rename. If the process dies after
     // this point, `restore` still knows the exact pre-compaction backup to materialize.
-    let manifest_file = write_manifest(&journal.key, &vault, &manifest)?;
+    let manifest_file = write_manifest(&journal.key, vault, &manifest)?;
 
     let _replacement_lock = compact_tmp.replace_locked(path)?;
     let recovery_manifest = manifest_file.clone();
@@ -642,7 +701,7 @@ pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<Co
                     None,
                     Some(failure_reasons.join("; ")),
                 );
-                write_manifest(&journal.key, &vault, &manifest)?;
+                write_manifest(&journal.key, vault, &manifest)?;
                 return Ok(CommandResult {
                     status: "restored_after_failed_verification".to_string(),
                     session: path.to_string_lossy().to_string(),
@@ -685,8 +744,8 @@ pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<Co
                 format_size(removed_bytes)
             )),
         );
-        let manifest_file = write_manifest(&journal.key, &vault, &manifest)?;
-        let _ = write_summary(&journal.key, &vault, &manifest);
+        let manifest_file = write_manifest(&journal.key, vault, &manifest)?;
+        let _ = write_summary(&journal.key, vault, &manifest);
 
         Ok(CommandResult {
             status: "ok".to_string(),

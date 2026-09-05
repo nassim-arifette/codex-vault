@@ -26,6 +26,7 @@ Les commandes directes restent disponibles (`--session ID` reste accepte) :
 .\dist\codex-vault.exe analyze ID
 .\dist\codex-vault.exe archive ID
 .\dist\codex-vault.exe compact ID
+.\dist\codex-vault.exe compact ID --dry-run
 .\dist\codex-vault.exe doctor ID
 .\dist\codex-vault.exe restore ID --original
 ```
@@ -35,6 +36,12 @@ projet du Desktop. Dans un terminal, les comptes rendus sont lisibles ; `--json`
 sortie machine. Une conversation deja compactee retourne `already_compact` sans reecriture
 ni changement de la sauvegarde de retour. Les sous-agents et les anciennes pages d'une
 conversation paginee restent proteges par defaut.
+
+`compact --dry-run` estimates the new compressed backup without writing files. Its estimate
+excludes journal growth. Completed compactions report the actual net change in logical bytes,
+including all retained backups and journal files. A negative net saving is reported explicitly;
+compaction can reduce the active transcript while increasing total storage. Existing snapshots
+are retained for recovery. The menu shows this estimate before confirmation.
 
 A conservative Windows-first CLI for very large Codex session files. The MVP implements only the first safe layer:
 
