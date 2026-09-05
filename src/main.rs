@@ -47,6 +47,38 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Build or refresh the local full-text index of conversations and verified archives.
+    Index {
+        /// Restrict updates to this project and its subdirectories.
+        #[arg(long, conflicts_with = "rebuild")]
+        cwd: Option<String>,
+        /// Rebuild the entire index atomically, including recovery from a corrupt index.
+        #[arg(long)]
+        rebuild: bool,
+        /// Show index size and coverage without changing it.
+        #[arg(long, conflicts_with_all=["cwd","rebuild"])]
+        status: bool,
+    },
+    /// Search indexed messages; whitespace-separated terms are combined with AND.
+    Search {
+        query: String,
+        #[arg(long)]
+        cwd: Option<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+    },
+    /// Read an exact indexed passage and verify a backing source against its saved hash.
+    Read {
+        id: String,
+        #[arg(long)]
+        cwd: Option<String>,
+        #[arg(long, default_value_t = 8000)]
+        limit: usize,
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+    },
     /// Menu interactif dans le terminal : choisir une conversation et une action.
     Menu {
         #[arg(long)]
@@ -180,6 +212,34 @@ fn print_json<T: Serialize>(value: &T, stream: &mut dyn IoWrite, compact: bool) 
 
 fn run(command: Command, batch: BatchOptions) -> Result<Value> {
     match command {
+        Command::Index {
+            cwd,
+            rebuild,
+            status,
+        } => {
+            if status {
+                codex_vault::index::status()
+            } else {
+                codex_vault::index::build(cwd.as_deref().map(std::path::Path::new), rebuild)
+            }
+        }
+        Command::Search {
+            query,
+            cwd,
+            limit,
+            offset,
+        } => codex_vault::index::search(
+            &query,
+            cwd.as_deref().map(std::path::Path::new),
+            limit,
+            offset,
+        ),
+        Command::Read {
+            id,
+            cwd,
+            limit,
+            offset,
+        } => codex_vault::index::read(&id, cwd.as_deref().map(std::path::Path::new), offset, limit),
         Command::Menu { .. } => unreachable!("menu handled before JSON commands"),
         Command::Scan { cwd } => scan_command(cwd),
         Command::Analyze {

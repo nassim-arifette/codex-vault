@@ -12,6 +12,7 @@ pub mod error;
 pub mod format;
 pub mod fsatomic;
 pub mod hashing;
+pub mod index;
 pub mod manifest;
 pub mod ops;
 pub mod parallel;

@@ -30,6 +30,12 @@ pub mod exit {
 
 #[derive(Debug)]
 pub enum VaultError {
+    Index {
+        reason: String,
+    },
+    InvalidInput {
+        reason: String,
+    },
     /// An error after atomic replacement. The prepared recovery journal remains authoritative.
     AfterReplacement {
         source: Box<VaultError>,
@@ -105,6 +111,8 @@ pub enum VaultError {
 impl VaultError {
     pub fn code(&self) -> &'static str {
         match self {
+            Self::Index { .. } => "index_error",
+            Self::InvalidInput { .. } => "invalid_input",
             VaultError::AfterReplacement { source, .. } => source.code(),
             VaultError::Io { .. } => "io_error",
             VaultError::Json { .. } => "json_error",
@@ -127,6 +135,8 @@ impl VaultError {
 
     pub fn exit_code(&self) -> u8 {
         match self {
+            Self::Index { .. } => exit::INTEGRITY,
+            Self::InvalidInput { .. } => exit::USAGE,
             VaultError::AfterReplacement { source, .. } => source.exit_code(),
             VaultError::Io { .. } => exit::IO,
             VaultError::Json { .. } => exit::INTEGRITY,
@@ -151,6 +161,7 @@ impl VaultError {
     /// Structured fields for the JSON error document, so scripts never have to parse prose.
     pub fn details(&self) -> serde_json::Value {
         match self {
+            Self::Index { reason } | Self::InvalidInput { reason } => json!({"reason":reason}),
             VaultError::AfterReplacement { source, manifest } => {
                 json!({"cause": source.details(), "recovery_manifest": manifest})
             }
@@ -238,6 +249,8 @@ impl VaultError {
 impl fmt::Display for VaultError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Index { reason } => write!(f, "search index: {reason}"),
+            Self::InvalidInput { reason } => write!(f, "{reason}"),
             VaultError::AfterReplacement { source, manifest } => write!(f, "{source}; transcript was replaced; recovery journal: {}. Run doctor then restore if needed", manifest.display()),
             VaultError::Io {
                 path,

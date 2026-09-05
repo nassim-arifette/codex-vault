@@ -12,6 +12,29 @@ struct CliSandbox {
 }
 
 impl CliSandbox {
+    fn ok(&self, args: &[&str]) -> Value {
+        let result = self.run(args, None);
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        Self::value(&result)
+    }
+
+    fn add_historical_message(&self) {
+        let mut lines: Vec<Value> = fs::read_to_string(&self.session)
+            .unwrap()
+            .lines()
+            .map(|s| serde_json::from_str(s).unwrap())
+            .collect();
+        lines.insert(1, json!({"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Decision: authentication uses rotating refresh tokens. Café 🦀"}]}}));
+        fs::write(
+            &self.session,
+            lines.iter().map(|v| format!("{v}\n")).collect::<String>(),
+        )
+        .unwrap();
+    }
     fn new() -> Self {
         let dir = TempDir::new().unwrap();
         let sessions = dir.path().join("codex/sessions");
@@ -265,4 +288,171 @@ fn multiple_compactions_preserve_each_cycle_and_account_for_retained_snapshots()
         .run(&["doctor", "cli-test", "--deep"], None)
         .status
         .success());
+}
+
+#[test]
+fn search_survives_compaction_reindex_corruption_rebuild_and_restore() {
+    let sb = CliSandbox::new();
+    sb.add_historical_message();
+    let original = fs::read(&sb.session).unwrap();
+    let first = sb.ok(&["index"]);
+    assert!(first["index_bytes"].as_u64().unwrap() > 0);
+    let matches = sb.ok(&["search", "authentication tokens"]);
+    assert_eq!(matches["matches"].as_array().unwrap().len(), 1);
+    let id = matches["matches"][0]["id"].as_str().unwrap();
+    let read = sb.ok(&["read", id]);
+    assert_eq!(
+        read["text"],
+        "Decision: authentication uses rotating refresh tokens. Café 🦀"
+    );
+    assert_eq!(read["verified_reference"]["line"], 2);
+    assert_eq!(fs::read(&sb.session).unwrap(), original);
+    sb.ok(&["compact", "cli-test"]);
+    sb.ok(&["index"]);
+    let after = sb.ok(&["search", "authentication tokens"]);
+    assert_eq!(after["matches"][0]["id"], id);
+    assert_eq!(sb.ok(&["read", id])["verified_reference"]["kind"], "backup");
+    let unchanged = sb.ok(&["index"]);
+    assert_eq!(unchanged["updated_sources"], 0);
+    assert_eq!(unchanged["unchanged_sources"], 2);
+    fs::write(
+        sb.dir.path().join("vault/index.sqlite"),
+        b"corrupt derived index",
+    )
+    .unwrap();
+    assert_eq!(
+        sb.run(&["search", "authentication"], None).status.code(),
+        Some(4)
+    );
+    sb.ok(&["index", "--rebuild"]);
+    assert_eq!(sb.ok(&["search", "authentication"])["matches"][0]["id"], id);
+    sb.ok(&["restore", "cli-test", "--original"]);
+    sb.ok(&["index"]);
+    assert_eq!(
+        sb.ok(&["search", "authentication"])["matches"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(sb.ok(&["read", id])["text"], read["text"]);
+    assert_eq!(fs::read(&sb.session).unwrap(), original);
+    fs::remove_file(&sb.session).unwrap();
+    sb.ok(&["index"]);
+    assert_eq!(sb.ok(&["read", id])["text"], read["text"]);
+}
+
+#[test]
+fn project_filters_cannot_leak_into_a_similarly_named_project() {
+    let sb = CliSandbox::new();
+    sb.add_historical_message();
+    let other = sb.dir.path().join("codex/sessions/rollout-other.jsonl");
+    let text = fs::read_to_string(&sb.session)
+        .unwrap()
+        .replace("cli-test", "other-test")
+        .replace("C:/sample project", "C:/sample project-other");
+    fs::write(other, text).unwrap();
+    sb.ok(&["index", "--cwd", "C:/sample project"]);
+    assert_eq!(
+        sb.ok(&["search", "authentication"])["matches"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    sb.ok(&["index", "--cwd", "C:/sample project-other"]);
+    let all = sb.ok(&["search", "authentication"]);
+    assert_eq!(all["matches"].as_array().unwrap().len(), 2);
+    let filtered = sb.ok(&["search", "authentication", "--cwd", "C:/sample project"]);
+    assert_eq!(filtered["matches"].as_array().unwrap().len(), 1);
+    let other_id = all["matches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["session_id"] == "other-test")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        sb.run(&["read", other_id, "--cwd", "C:/sample project"], None)
+            .status
+            .code(),
+        Some(2)
+    );
+    assert_eq!(
+        sb.run(&["index", "--rebuild", "--cwd", "C:/sample project"], None)
+            .status
+            .code(),
+        Some(2)
+    );
+}
+
+#[test]
+fn failed_index_update_preserves_previous_search_results() {
+    let sb = CliSandbox::new();
+    sb.add_historical_message();
+    sb.ok(&["index"]);
+    let id = sb.ok(&["search", "authentication"])["matches"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(&sb.session)
+        .unwrap();
+    writeln!(file, "broken json").unwrap();
+    drop(file);
+    assert_eq!(sb.run(&["index"], None).status.code(), Some(4));
+    assert_eq!(sb.run(&["index", "--rebuild"], None).status.code(), Some(4));
+    assert_eq!(sb.ok(&["search", "authentication"])["matches"][0]["id"], id);
+    assert_eq!(sb.run(&["read", &id], None).status.code(), Some(4));
+}
+
+#[test]
+fn oversized_records_are_counted_without_losing_following_references() {
+    let sb = CliSandbox::new();
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(&sb.session)
+        .unwrap();
+    writeln!(file,"{}",json!({"type":"response_item","payload":{"type":"function_call_output","output":"x".repeat(16*1024*1024)}})).unwrap();
+    writeln!(file,"{}",json!({"type":"event_msg","payload":{"type":"user_message","message":"after oversized record"}})).unwrap();
+    drop(file);
+    let report = sb.ok(&["index"]);
+    assert_eq!(report["skipped_oversized_records"], 1);
+    let id = sb.ok(&["search", "oversized"])["matches"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let found = sb.ok(&["read", &id]);
+    assert_eq!(found["text"], "after oversized record");
+    assert!(
+        found["verified_reference"]["decoded_byte_offset"]
+            .as_u64()
+            .unwrap()
+            > 16 * 1024 * 1024
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn indexing_defers_busy_native_sources_and_keeps_their_previous_snapshot() {
+    let sb = CliSandbox::new();
+    sb.add_historical_message();
+    sb.ok(&["index"]);
+    let _writer = fs::OpenOptions::new()
+        .write(true)
+        .open(&sb.session)
+        .unwrap();
+    let report = sb.ok(&["index"]);
+    assert_eq!(report["deferred_busy_sources"], 1);
+    assert_eq!(report["removed_sources"], 0);
+    assert_eq!(
+        sb.ok(&["search", "authentication"])["matches"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(sb.run(&["index", "--rebuild"], None).status.code(), Some(5));
 }

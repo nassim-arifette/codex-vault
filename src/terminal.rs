@@ -52,6 +52,52 @@ fn label(status: &str) -> &str {
 }
 
 pub fn render(value: &Value) {
+    if let Some(matches) = value["matches"].as_array() {
+        for hit in matches {
+            println!(
+                "{} | {} | {}\n{}\n",
+                clean(hit["id"].as_str().unwrap_or("")),
+                clean(hit["project"].as_str().unwrap_or("")),
+                clean(hit["role"].as_str().unwrap_or("")),
+                clean(hit["excerpt"].as_str().unwrap_or(""))
+            );
+        }
+        if matches.is_empty() {
+            println!("Aucun resultat dans l'index.");
+        }
+        if let Some(offset) = value["next_offset"].as_u64() {
+            println!("Suite : --offset {offset}");
+        }
+        return;
+    }
+    if let Some(text) = value["text"].as_str() {
+        println!("{}", clean(text));
+        if let Some(reference) = value["verified_reference"].as_object() {
+            println!(
+                "Source verifiee : {} | ligne {}",
+                clean(reference["path"].as_str().unwrap_or("")),
+                reference["line"]
+            );
+        }
+        if let Some(offset) = value["next_offset"].as_u64() {
+            println!("Suite : --offset {offset}");
+        }
+        return;
+    }
+    if value.get("index_bytes").is_some() {
+        println!(
+            "Index : {} sources, {} passages, {}. Coffre total : {}.",
+            value["sources"],
+            value["passages"],
+            format_size(value["index_bytes"].as_u64().unwrap_or(0)),
+            format_size(value["vault_bytes"].as_u64().unwrap_or(0))
+        );
+        println!(
+            "Enregistrements trop volumineux ignores : {}",
+            value["skipped_oversized_records"]
+        );
+        return;
+    }
     if let Some(rows) = value.as_array() {
         for row in rows {
             render(row);
