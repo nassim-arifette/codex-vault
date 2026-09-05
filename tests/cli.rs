@@ -423,7 +423,7 @@ fn mcp_handshake_tools_and_project_scope_are_read_only() {
         json!({"jsonrpc":"2.0","id":0,"method":"tools/list"}),
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"synthetic-client","version":"1"}}}),
         json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
-        json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"cursor":null,"_meta":{"progressToken":"synthetic"}}}),
         json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vault_search","arguments":{"query":"authentication"}}}),
         json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vault_read","arguments":{"id":id}}}),
         json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"vault_search","arguments":{"query":"authentication","cwd":"C:/"}}}),

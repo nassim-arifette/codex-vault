@@ -165,7 +165,12 @@ pub fn serve(mut input: impl BufRead, mut output: impl Write, scope: Option<&Pat
             "initialize" => error(id, -32600, "Already initialized"),
             "ping" => json!({"jsonrpc":"2.0","id":id,"result":{}}),
             _ if !ready => error(id, -32002, "Complete initialization first"),
-            "tools/list" if params.as_object().is_some_and(|p| p.is_empty()) => {
+            "tools/list"
+                if params.is_null()
+                    || params
+                        .as_object()
+                        .is_some_and(|p| p.get("cursor").is_none_or(Value::is_null)) =>
+            {
                 json!({"jsonrpc":"2.0","id":id,"result":tools()})
             }
             "tools/list" => error(
