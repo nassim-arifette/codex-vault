@@ -304,7 +304,8 @@ fn capture_reconstruction(sandbox: &DiffSandbox) -> Result<Value, String> {
         "model_providers.mock={{name=\"mock\",base_url=\"{}\",wire_api=\"responses\",env_key=\"OPENAI_API_KEY\"}}",
         server.base_url()
     );
-    let mut child = Command::new(&codex)
+    let mut command = Command::new(&codex);
+    command
         .arg("exec")
         .arg("resume")
         .arg(&sandbox.session_id)
@@ -316,7 +317,8 @@ fn capture_reconstruction(sandbox: &DiffSandbox) -> Result<Value, String> {
         .env("OPENAI_API_KEY", "differential-harness-mock")
         .current_dir(sandbox.cwd())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command
         .spawn()
         .map_err(|e| format!("spawning codex: {e}"))?;
 
@@ -622,6 +624,96 @@ fn describe(cases: &[Case]) -> String {
 
 fn require_codex() -> Option<PathBuf> {
     Some(resolve_codex_binary().expect("no codex executable: install Codex or set CODEX_VAULT_CODEX_BIN; differential validation has NOT run"))
+}
+
+#[test]
+#[ignore = "requires a Codex binary"]
+fn codex_discovers_the_readonly_vault_mcp_tools() {
+    // Inspect Codex's actual MCP inventory. A mock model provider may omit all
+    // tools from model requests, independently of successful MCP discovery.
+    let codex = require_codex().unwrap();
+    let sandbox = TempDir::new().unwrap();
+    fs::create_dir(sandbox.path().join("codex")).unwrap();
+    let executable = serde_json::to_string(env!("CARGO_BIN_EXE_codex-vault")).unwrap();
+    let configuration = format!("mcp_servers.vault={{command={executable},args=[\"mcp\"],required=true,startup_timeout_sec=30}}");
+    let mut process = KillOnDrop(
+        Command::new(codex)
+            .args(["app-server", "-c", &configuration])
+            .env("CODEX_HOME", sandbox.path().join("codex"))
+            .env("CODEX_VAULT_HOME", sandbox.path().join("vault"))
+            .current_dir(sandbox.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect("start Codex app-server"),
+    );
+    let mut input = process.0.stdin.take().unwrap();
+    let output = process.0.stdout.take().unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        for line in BufReader::new(output).lines() {
+            let Ok(line) = line else { break };
+            if let Ok(value) = serde_json::from_str::<Value>(&line) {
+                if sender.send(value).is_err() {
+                    break;
+                }
+            }
+        }
+    });
+    let await_response = |id: u64| -> Value {
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        loop {
+            let value = receiver
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                .expect("Codex app-server response timed out");
+            if value["id"] == id {
+                assert!(value.get("error").is_none(), "Codex RPC error: {value}");
+                return value["result"].clone();
+            }
+        }
+    };
+    writeln!(input, "{}", json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"vault-test","version":"1.0"},"capabilities":{}}})).unwrap();
+    input.flush().unwrap();
+    await_response(1);
+    writeln!(input, "{}", json!({"method":"initialized"})).unwrap();
+    writeln!(
+        input,
+        "{}",
+        json!({"id":2,"method":"mcpServerStatus/list","params":{"detail":"full"}})
+    )
+    .unwrap();
+    input.flush().unwrap();
+    let inventory = await_response(2);
+    let server = inventory["data"]
+        .as_array()
+        .expect("MCP inventory")
+        .iter()
+        .find(|s| s["name"] == "vault")
+        .expect("Vault server registered");
+    let tools = server["tools"].as_object().expect("discovered tool map");
+    for name in ["vault_search", "vault_read"] {
+        assert!(
+            tools
+                .values()
+                .any(|tool| tool["name"] == name && tool["annotations"]["readOnlyHint"] == true),
+            "Missing read-only tool {name}: {server}"
+        );
+    }
+    assert_eq!(tools.len(), 2);
+    assert!(
+        !sandbox.path().join("vault").exists(),
+        "MCP discovery must not initialize or mutate storage"
+    );
+    eprintln!("Codex discovered both read-only Vault MCP tools.");
+}
+
+struct KillOnDrop(std::process::Child);
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
 }
 
 struct SandboxEnv {

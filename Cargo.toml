@@ -1,8 +1,10 @@
 [package]
 name = "codex-vault"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Safe local archive and compaction utility for Codex JSONL sessions"
+license = "MIT"
+repository = "https://github.com/nassim-arifette/codex-vault"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

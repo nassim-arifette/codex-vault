@@ -178,6 +178,11 @@ pub fn serve(mut input: impl BufRead, mut output: impl Write, scope: Option<&Pat
                 -32602,
                 "No cursor is required; all tools fit in one response",
             ),
+            // Codex probes these catalogs even when only tools are advertised.
+            "resources/list" => json!({"jsonrpc":"2.0","id":id,"result":{"resources":[]}}),
+            "resources/templates/list" => {
+                json!({"jsonrpc":"2.0","id":id,"result":{"resourceTemplates":[]}})
+            }
             "tools/call" => {
                 let name = params["name"].as_str().unwrap_or("");
                 if !["vault_search", "vault_read"].contains(&name) {

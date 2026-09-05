@@ -1,10 +1,21 @@
-# Codex Vault MVP
+# Codex Vault
 
 CLI Windows pour sauvegarder, compacter et restaurer les conversations Codex avec verification d'integrite.
 
 ## Utilisation simple
 
-Apres avoir clone le depot, installer Rust stable puis executer `.\build-windows.ps1` pour construire le CLI dans `dist`.
+Pour Windows x86_64, telecharger le ZIP et `SHA256SUMS.txt` depuis les
+[releases](https://github.com/nassim-arifette/codex-vault/releases). Verifier le SHA-256 du ZIP avec
+`Get-FileHash`, extraire le ZIP puis lancer `install.ps1`. Ouvrir un nouveau terminal :
+
+```powershell
+codex-vault --help
+codex-vault menu
+```
+
+L'installation se fait dans le profil utilisateur, sans droits administrateur. Rust, Node et une
+installation separee de SQLite ou du runtime Visual C++ ne sont pas necessaires. Le binaire Windows est non signe.
+Pour compiler depuis les sources, installer Rust stable puis executer `.\build-windows.ps1`.
 
 Codex Vault reste un **CLI**. Pour choisir une conversation sans recopier son identifiant :
 
@@ -43,7 +54,7 @@ including all retained backups and journal files. A negative net saving is repor
 compaction can reduce the active transcript while increasing total storage. Existing snapshots
 are retained for recovery. The menu shows this estimate before confirmation.
 
-A conservative Windows-first CLI for very large Codex session files. The MVP implements only the first safe layer:
+A conservative Windows-first CLI for very large Codex session files. The recovery commands are:
 
 - `scan` — discover `.codex/sessions` and `.codex/archived_sessions` rollouts, including Codex-managed `.jsonl.zst`, without reading every multi-GB transcript just to obtain `cwd`;
 - `analyze` — stream the transcript and decide whether Codex's current bounded-reconstruction conditions can be proven;
@@ -96,7 +107,7 @@ Build the index first, then register the installed executable with Codex:
 
 ```powershell
 codex-vault index --cwd C:\path\to\project
-codex mcp add codex-vault -- codex-vault mcp --cwd C:\path\to\project
+codex mcp add vault -- codex-vault mcp --cwd C:\path\to\project
 ```
 
 Use the absolute executable path in the registration command if it is not on `PATH`.
@@ -108,9 +119,30 @@ data, with verified source references. Re-run the CLI `index` command to refresh
 The server supports MCP protocol versions `2025-11-25`, `2025-06-18` and `2025-03-26`.
 There is no HTTP listener or separate database service. CLI commands remain usable without MCP.
 
+## Automated checks and compatibility
+
+GitHub Actions runs formatting, Clippy and synthetic unit/integration tests on Windows and Linux.
+Windows compatibility jobs generate synthetic conversations and run the differential harness
+against pinned Codex versions 0.152.1 and 0.153.4, checking two resumed turns and the read-only
+MCP tool catalog. No real conversation is required by CI. Codex downloads are checked against
+the official release asset SHA-256. The standard test suite does not make model API calls.
+
+To reproduce the synthetic matrix on Windows:
+
+```powershell
+$env:CODEX_VAULT_DIFF_CASES = .\scripts\New-SyntheticCorpus.ps1
+$env:CODEX_VAULT_CODEX_BIN = .\scripts\Get-TestCodex.ps1 -Version 0.153.4
+.\test-differential.ps1
+```
+
+The version downloader uses an authenticated GitHub CLI (`gh`). Compatibility applies to the
+tested cases and does not establish safety for every future Codex format. Release tags publish
+a Windows ZIP only after checks, compatibility tests and a fresh-runner installation smoke test
+pass. This is a preview release. The project is licensed under [MIT](LICENSE).
+
 ## Why the cutoff is conservative
 
-Current Codex reconstruction code has a bounded reverse scan. A safe suffix requires both a compaction checkpoint with `replacement_history` + `window_number` and sufficient completed-turn context. A compaction missing either field, or a rollback marker in the required suffix, forces a scan back to the beginning. The MVP mirrors those conditions rather than assuming that “latest `compacted` line” is always enough.
+The tested Codex versions reconstruct history with a bounded reverse scan. A safe suffix requires both a compaction checkpoint with `replacement_history` + `window_number` and sufficient completed-turn context. A compaction missing either field, or a rollback marker in the required suffix, forces a scan back to the beginning. Vault mirrors those conditions rather than assuming that “latest `compacted` line” is always enough.
 
 The native JSONL is an envelope such as:
 
@@ -122,8 +154,8 @@ so the implementation parses Codex fields from `payload`. Current `session_meta`
 
 ## Layout
 
-The crate is a library plus a thin binary, so the destructive half can be driven directly from
-tests — and, later, from the differential compatibility harness described at the end of this file.
+The crate is a library plus a thin binary. Integration tests and the differential compatibility
+harness exercise the same operations as the CLI.
 
 ```text
 src/
@@ -138,6 +170,9 @@ src/
 ├── discovery.rs  finding sessions, resolving references, --cwd scoping
 ├── parallel.rs   ordered parallel batches and stderr progress
 ├── commands.rs   CLI-facing JSON wrappers
+├── storage.rs    net storage accounting and read-only compaction estimates
+├── index.rs      rebuildable SQLite FTS5 index and verified passage retrieval
+├── mcp.rs        scoped read-only MCP tools over stdio
 ├── terminal.rs   readable output and optional interactive CLI menu
 ├── error.rs      the typed error domain and its exit classes
 └── main.rs       argument parsing and process exit
@@ -313,6 +348,7 @@ recovery journal; it never claims that the transcript was left untouched.
 
 ```text
 %USERPROFILE%\.codex-vault\
+├── index.sqlite
 ├── backups\
 │   ├── SESSION.original.jsonl.zst
 │   ├── SESSION.precompact-TIMESTAMP.jsonl.zst
@@ -358,7 +394,7 @@ destructive operation:
   interrupted before it committed; `doctor` reports that as a warning and `restore` still knows
   the exact pre-compaction state.
 
-## Safety properties in this MVP
+## Recovery safety properties
 
 - streaming processing; large tool outputs are parsed and discarded immediately, and only a bounded window of structural reconstruction records + byte offsets is retained, so analysis memory does not grow with the file;
 - `scan` only inspects the head of each transcript for SessionMeta instead of reading every GB;
@@ -380,10 +416,10 @@ destructive operation:
 - `prune` checks the union of all recovery journals before judging a backup unreferenced;
   a sibling's legacy backup is retained, and an unreadable journal blocks backup deletion;
 - a destructive `--cwd` batch only matches sessions whose own `cwd` is inside the given path;
-- Codex-managed `.jsonl.zst` rollouts are visible/analyzable but deliberately read-only in v0.1; Codex must rematerialize them before Vault mutates them;
+- Codex-managed `.jsonl.zst` rollouts are discoverable, analyzable and searchable but deliberately read-only; Codex must rematerialize them before Vault mutates them;
 - `CODEX_HOME` is respected, and `CODEX_VAULT_HOME` can override Vault storage.
 
-## Important MVP limitation
+## Transcript compatibility limitation
 
 The code mirrors the current bounded-scan rules structurally, but it is not linked against Codex's private Rust types and the transcript format is not a stable public API. Before using `compact-safe` on irreplaceable sessions, test `analyze`, `archive`, `doctor`, and `restore` on copies of several real rollouts from your installed Codex version.
 
@@ -470,11 +506,10 @@ remain local and are excluded from Git.
 
 ## What is still not covered
 
-The harness above answers the central question, but its reach has limits worth stating: it has
-been run against one Codex version and two consecutive resumed turns per compacted session. It
-says nothing about sessions Codex has already converted to `.jsonl.zst`, which v0.1 treats as
-read-only anyway. Widening the fixture matrix and pinning a second Codex version are the cheapest
-ways to strengthen it before v0.2 adds the SQLite/MCP cold-memory layer.
+The harness has a bounded scope: two pinned Codex versions and two consecutive resumed turns per compacted synthetic session
+are checked in CI. This does not cover every transcript variant or future Codex release.
+Codex-managed `.jsonl.zst` sessions remain read-only. Long-running live workloads and more Codex
+versions remain useful additions to the compatibility matrix.
 
 The Windows rename behavior is documented by Microsoft in
 [SetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle)

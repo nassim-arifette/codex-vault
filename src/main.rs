@@ -17,14 +17,18 @@ use std::io::{self, IsTerminal, Write as IoWrite};
 use std::process::ExitCode;
 
 #[derive(Parser)]
-#[command(name = "codex-vault", version, about = "Codex Session Vault MVP")]
+#[command(
+    name = "codex-vault",
+    version,
+    about = "Local archives and searchable history for Codex sessions",
+    after_help = "Examples:\n  codex-vault menu\n  codex-vault compact SESSION --dry-run\n  codex-vault index --cwd .\n  codex-vault search \"authentication tokens\" --cwd .\n  codex-vault read PASSAGE_ID\n\nUse COMMAND --help for details."
+)]
 struct Cli {
-    /// Emit each result as a single compact JSON line instead of pretty-printed JSON, so
-    /// output can be piped straight into `jq`, a log, or a JSONL file.
+    /// Print compact JSON, including in an interactive terminal.
     #[arg(long, global = true)]
     json: bool,
 
-    /// Afficher un compte rendu lisible, meme si la sortie est redirigee.
+    /// Print human-readable output, including when redirected.
     #[arg(long, global = true, conflicts_with = "json")]
     human: bool,
 
@@ -38,6 +42,7 @@ struct Cli {
     #[arg(long, global = true, conflicts_with = "no_progress")]
     progress: bool,
 
+    /// Disable progress messages on stderr.
     #[arg(long, global = true)]
     no_progress: bool,
 
@@ -85,7 +90,7 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         offset: usize,
     },
-    /// Menu interactif dans le terminal : choisir une conversation et une action.
+    /// Choose a conversation and an action in the terminal.
     Menu {
         #[arg(long)]
         cwd: Option<String>,

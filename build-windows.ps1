@@ -27,13 +27,13 @@ try {
     }
 
     Write-Host "Running Codex Vault lints..."
-    Invoke-Cargo @("clippy", "--all-targets", "--", "-D", "warnings")
+    Invoke-Cargo @("clippy", "--locked", "--all-targets", "--", "-D", "warnings")
 
     Write-Host "Running Codex Vault tests..."
-    Invoke-Cargo @("test")
+    Invoke-Cargo @("test", "--locked")
 
     Write-Host "Building release executable..."
-    Invoke-Cargo @("build", "--release")
+    Invoke-Cargo @("build", "--locked", "--release")
 
     New-Item -ItemType Directory -Force -Path dist | Out-Null
     Copy-Item target\release\codex-vault.exe dist\codex-vault.exe -Force
