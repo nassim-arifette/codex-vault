@@ -1,0 +1,29 @@
+/target/
+/dist/
+*.tmp
+/test_session/
+/differential-cases.json
+/recovered/
+/validation/
+[Vv][Aa][Ll][Ii][Dd][Aa][Tt][Ii][Oo][Nn].[Mm][Dd]
+
+# Local instructions, planning notes and tool configuration
+[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]
+[Cc][Ll][Aa][Uu][Dd][Ee].[Mm][Dd]
+/.agents/
+/.claude/
+/.codex/
+[Ii][Ss][Ss][Uu][Ee].[Mm][Dd]
+[Ii][Ss][Ss][Uu][Ee][Ss].[Mm][Dd]
+
+# Private session data, backups and credentials
+*.jsonl
+*.jsonl.zst
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+.env
+.env.*
+*.pem
+*.key
