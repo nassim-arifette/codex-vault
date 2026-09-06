@@ -5,6 +5,10 @@
 Use `codex-vault --help` for the command list and `codex-vault COMMAND --help` for
 descriptions and examples. `compact` is the primary command; `compact-safe` remains an alias.
 
+![Actual help output rendered for documentation](assets/cli-help.png)
+
+*Output captured from the Windows release executable and rendered as a documentation preview.*
+
 ## Installation
 
 Download the Windows x86_64 ZIP and `SHA256SUMS.txt` from

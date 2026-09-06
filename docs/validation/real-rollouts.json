@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-06",
+  "vault_version": "0.2.1",
+  "codex_oracle_version": "0.153.4",
+  "representative_real_rollouts": 5,
+  "all_passed": true,
+  "long_synthetic_lifecycle_oracle_passed": true,
+  "records": [
+    {
+      "case": "R02",
+      "expected": "COMPACT_ALLOWED",
+      "input_bytes": 3494780,
+      "observed": "COMPACT_ALLOWED",
+      "output_bytes": 1102202,
+      "passed": true,
+      "refusal_code": null,
+      "resumed_turns_per_arm": 2,
+      "schema_version": 1,
+      "test": "reconstruction",
+      "profile": {
+        "checkpoints": 2,
+        "tools": 268,
+        "largest_tool": 43382,
+        "unicode_records": 187,
+        "rollback": 1
+      }
+    },
+    {
+      "case": "R03",
+      "expected": "COMPACT_ALLOWED",
+      "input_bytes": 38857725,
+      "observed": "COMPACT_ALLOWED",
+      "output_bytes": 36015052,
+      "passed": true,
+      "refusal_code": null,
+      "resumed_turns_per_arm": 2,
+      "schema_version": 1,
+      "test": "reconstruction",
+      "profile": {
+        "checkpoints": 3,
+        "tools": 368,
+        "largest_tool": 2706418,
+        "unicode_records": 437,
+        "rollback": 1
+      }
+    },
+    {
+      "case": "R04",
+      "expected": "COMPACT_ALLOWED",
+      "input_bytes": 278400231,
+      "observed": "COMPACT_ALLOWED",
+      "output_bytes": 3106096,
+      "passed": true,
+      "refusal_code": null,
+      "resumed_turns_per_arm": 2,
+      "schema_version": 1,
+      "test": "reconstruction",
+      "profile": {
+        "checkpoints": 32,
+        "tools": 3056,
+        "largest_tool": 11731375,
+        "unicode_records": 4969,
+        "rollback": 0
+      }
+    },
+    {
+      "case": "R02",
+      "expected": "COMPACT_ALLOWED",
+      "input_bytes": 3494780,
+      "observed": "COMPACT_ALLOWED",
+      "passed": true,
+      "refusal_code": null,
+      "schema_version": 1,
+      "test": "negative_control",
+      "profile": {
+        "checkpoints": 2,
+        "tools": 268,
+        "largest_tool": 43382,
+        "unicode_records": 187,
+        "rollback": 1
+      }
+    },
+    {
+      "byte_identical": true,
+      "case": "R01",
+      "expected": "ARCHIVE_ONLY",
+      "input_bytes": 20428,
+      "observed": "ARCHIVE_ONLY",
+      "passed": true,
+      "refusal_code": null,
+      "schema_version": 1,
+      "test": "refusal",
+      "profile": {
+        "checkpoints": 0,
+        "tools": 0,
+        "largest_tool": 0,
+        "unicode_records": 5,
+        "rollback": 0
+      }
+    },
+    {
+      "byte_identical": true,
+      "case": "R05",
+      "expected": "COMPACT_REFUSED",
+      "input_bytes": 25573,
+      "observed": "COMPACT_REFUSED",
+      "passed": true,
+      "refusal_code": "spawned_thread_refused",
+      "schema_version": 1,
+      "test": "refusal"
+    }
+  ],
+  "privacy": "Ordinal aliases and aggregate counts only; fixture lists, raw logs and content remain private."
+}

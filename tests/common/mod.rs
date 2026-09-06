@@ -75,6 +75,22 @@ pub fn lifecycle(path: &Path, codex: &Path, vault: &Path, cwd: &Path) -> Vec<u8>
         serde_json::from_slice(&output.stdout).unwrap()
     };
     let target = path.to_str().unwrap();
+    let mutate = |args: &[&str]| -> Value {
+        let previous = fs::read(path).unwrap();
+        let previous_hash = hash(&previous);
+        let result = run(args);
+        let states = run(&["restore", target, "--list"]);
+        assert!(
+            states["anchors"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|anchor| anchor["source_sha256"] == previous_hash
+                    && anchor["source_size"] == previous.len() as u64),
+            "every destructive transition must preserve its exact previous state"
+        );
+        result
+    };
     let mut original: Option<Value> = None;
     let mut history = Vec::<Value>::new();
     let mut backups = BTreeMap::<String, String>::new();
@@ -133,7 +149,7 @@ pub fn lifecycle(path: &Path, codex: &Path, vault: &Path, cwd: &Path) -> Vec<u8>
     let grown = fs::read(path).unwrap();
     assert!(grown.starts_with(&archived));
     assert_journal();
-    assert_eq!(run(&["compact", target])["status"], "ok");
+    assert_eq!(mutate(&["compact", target])["status"], "ok");
     assert_journal();
     let compacted = fs::read(path).unwrap();
     turn(path, cwd, "after-compact");
@@ -148,7 +164,7 @@ pub fn lifecycle(path: &Path, codex: &Path, vault: &Path, cwd: &Path) -> Vec<u8>
     );
     assert_journal();
     let newer = fs::read(path).unwrap();
-    run(&["restore", target, "--original"]);
+    mutate(&["restore", target, "--original"]);
     assert_eq!(fs::read(path).unwrap(), archived);
     assert_journal();
     let listed = run(&["restore", target, "--list"]);
@@ -159,7 +175,7 @@ pub fn lifecycle(path: &Path, codex: &Path, vault: &Path, cwd: &Path) -> Vec<u8>
         .iter()
         .find(|a| a["source_sha256"] == newer_hash)
         .unwrap();
-    run(&[
+    mutate(&[
         "restore",
         target,
         "--to",
@@ -171,7 +187,7 @@ pub fn lifecycle(path: &Path, codex: &Path, vault: &Path, cwd: &Path) -> Vec<u8>
     turn(path, cwd, "final");
     let baseline = fs::read(path).unwrap();
     assert_journal();
-    assert_eq!(run(&["compact", target])["status"], "ok");
+    assert_eq!(mutate(&["compact", target])["status"], "ok");
     assert_journal();
     let final_bytes = fs::read(path).unwrap();
     assert!(final_bytes.len() < baseline.len());
@@ -184,7 +200,7 @@ pub fn lifecycle(path: &Path, codex: &Path, vault: &Path, cwd: &Path) -> Vec<u8>
         if !checked.insert(anchor["source_sha256"].as_str().unwrap().to_owned()) {
             continue;
         }
-        run(&[
+        mutate(&[
             "restore",
             target,
             "--to",
@@ -201,7 +217,7 @@ pub fn lifecycle(path: &Path, codex: &Path, vault: &Path, cwd: &Path) -> Vec<u8>
         .iter()
         .find(|a| a["source_sha256"] == final_hash)
         .unwrap();
-    run(&[
+    mutate(&[
         "restore",
         target,
         "--to",

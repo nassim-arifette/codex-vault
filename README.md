@@ -34,6 +34,10 @@ Choose a conversation in the terminal menu:
 codex-vault menu
 ```
 
+![CLI menu with synthetic conversations](docs/assets/cli-menu.png)
+
+*Actual CLI output rendered for documentation, using synthetic data.*
+
 Or use direct commands from your project directory. Replace `SESSION_ID` with an ID or full
 rollout path from `scan`:
 
@@ -91,12 +95,13 @@ on a fresh Windows runner. This covers the tested cases, not every future Codex 
 | [Recovery journal](docs/recovery-journal.md) | Archive layout, recorded states and interrupted operations |
 | [Search and MCP](docs/search-and-mcp.md) | Indexing, exact passage references and Codex setup |
 | [Development](docs/development.md) | Source layout, builds, tests and release packaging |
+| [Local validation](docs/benchmarks.md) | Multi-GB measurements, real-rollout corpus and local ZIP installation |
 
 ## Planned improvements
 
 - **Guided `repair`** for supported damage or interrupted operations, with a reviewable plan and recovery snapshot before changes.
 - Easier index refresh and clearer backup storage management across repeated compactions.
-- More Codex versions, rollout variants and long-running lifecycle tests.
+- More Codex versions, rollout variants and concurrent live-session tests.
 - Broader platform distribution and Windows code signing.
 
 These are planned, not shipped features. There is currently **no `repair` command**;

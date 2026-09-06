@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "version": "0.2.1",
+  "passed": true,
+  "zip_sha256": "29b6682edeaf813841662e2a9b9739826159ec4f3ddd1b2f02071eee13d6eb0f",
+  "fresh_powershell_user_path": true,
+  "real_scan_found_sessions": true,
+  "copied_input_bytes": 278400231,
+  "compacted_native_bytes": 3106096,
+  "storage_after_compact": {
+    "backup_bytes": 113939093,
+    "native_bytes": 3106096,
+    "vault_bytes": 113943062
+  },
+  "index_bytes": 929792,
+  "restored_sha256_matches": true,
+  "original_unchanged": true,
+  "indexed_passage_verified": true,
+  "authenticode_status": "NotSigned",
+  "smartscreen": "Command-line install/start succeeded; interactive browser download/SmartScreen flow was not exercised.",
+  "portable_pe_import_check_passed": true,
+  "test_date": "2026-09-06"
+}

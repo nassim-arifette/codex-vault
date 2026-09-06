@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="475" viewBox="0 0 960 475">
+<title>codex-vault menu — actual CLI output with synthetic data</title>
+<desc>Rendered terminal output captured from the executable; not a native Windows screenshot.</desc>
+<rect width="960" height="475" rx="12" fill="#101820"/>
+<path d="M12 0 H948 Q960 0 960 12 V48 H0 V12 Q0 0 12 0" fill="#1c2935"/>
+<g fill="#91a4b5" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="13"><text x="32" y="30">CODEX VAULT  /  SYNTHETIC DEMO</text></g>
+<g font-family="Consolas,DejaVu Sans Mono,monospace" font-size="16" xml:space="preserve">
+<text x="32" y="80" fill="#7ee6be">&gt; codex-vault menu</text>
+<g fill="#e2eaf0"><text x="32" y="112"></text>
+<text x="32" y="135">CODEX VAULT — 1.9 MB total</text>
+<text x="32" y="158">3 matching rollouts — page 1/1</text>
+<text x="32" y="181">  1.   1.0 MB | 2026-09-06 03:26 | Authentication service</text>
+<text x="32" y="204">     rollout-demo-1</text>
+<text x="32" y="227">     C:/Projects/sample-app</text>
+<text x="32" y="250">  2. 537.4 KB | 2026-09-06 03:26 | Desktop release checklist</text>
+<text x="32" y="273">     rollout-demo-2</text>
+<text x="32" y="296">     C:/Projects/sample-app</text>
+<text x="32" y="319">  3. 358.4 KB | 2026-09-06 03:26 | Documentation refresh</text>
+<text x="32" y="342">     rollout-demo-3</text>
+<text x="32" y="365">     C:/Projects/sample-app</text>
+<text x="32" y="388">Number = open | /text = filter title or project | n/p = pages | r = refresh</text>
+<text x="32" y="411">s = size | d = date | a = show/hide spawned threads | f = file | q = quit</text>
+<text x="32" y="434">Choice &gt;</text></g></g></svg>

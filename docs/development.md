@@ -30,6 +30,7 @@ src/
 └── main.rs       argument parsing and process exit
 
 tests/
+├── common/mod.rs   shared long lifecycle and recovery-generation assertions
 ├── analysis.rs     format-tolerance and cutoff-proof specifications
 ├── cli.rs          executable commands, menu and exit-code contracts
 ├── destructive.rs  end-to-end coverage of everything that can lose data
@@ -62,7 +63,8 @@ cargo build --locked --release
 ## Documentation and releases
 
 The README is the entry point; detailed guides live in `docs/`. Public examples and CI fixtures
-must be synthetic. Keep local conversations, indices, benchmarks and project paths out of commits.
+must be synthetic. Keep local conversations, indices, raw benchmark logs and project paths out
+of commits. Only reviewed, anonymous measurements belong in `docs/validation/`.
 
 For a Windows ZIP with its executable checksum, README, guides, license and installer:
 
@@ -74,6 +76,11 @@ For a Windows ZIP with its executable checksum, README, guides, license and inst
 `-SkipBuild` packages an executable already built under `target/release`. The installer smoke
 test uses a temporary profile, verifies bundled runtime dependencies and exercises index,
 search and read. It does not change your user PATH or real Codex profile.
+
+`scripts/Test-LocalRelease.ps1` is the separate real-machine check: it downloads a public ZIP,
+installs it into the default user directory, updates User PATH and tests recovery on an isolated
+copy of a real rollout. `scripts/benchmark.py` generates and verifies 1/5/10 GB rollouts, with
+20 GB optional. See [local validation](benchmarks.md) for commands, metrics and limitations.
 
 For a release, update the Cargo version and lockfile, review `RELEASE_NOTES.md`, and push the
 tested changes. A matching `vVERSION` tag triggers CI; publication requires Windows/Linux checks,
