@@ -37,16 +37,16 @@ fn short(text: &str, width: usize) -> String {
 fn label(status: &str) -> &str {
     match status {
         "ok" => "OK",
-        "already_compact" => "Deja compacte : aucune modification necessaire",
-        "exists" => "Sauvegarde deja presente",
-        "snapshot_created" => "Nouvelle sauvegarde creee",
-        "archived_only" => "Sauvegarde effectuee ; compactage non applicable",
-        "warning" => "Verification : points a examiner",
-        "failed" | "verification_failed" => "ECHEC DE VERIFICATION",
-        "restored_after_failed_verification" => "Compactage annule ; etat precedent restaure",
-        "skipped_lineage_source" => "Page conservee : une page suivante en depend",
-        "skipped_spawned_thread" => "Sous-agent conserve",
-        "read_only_native_zstd" => "Deja compresse par Codex (lecture seule)",
+        "already_compact" => "Already compact: no changes needed",
+        "exists" => "Backup already exists",
+        "snapshot_created" => "New snapshot saved",
+        "archived_only" => "Backup saved; compaction is not applicable",
+        "warning" => "Verification: review the reported issues",
+        "failed" | "verification_failed" => "VERIFICATION FAILED",
+        "restored_after_failed_verification" => "Compaction undone; previous state restored",
+        "skipped_lineage_source" => "Page retained: a later page depends on it",
+        "skipped_spawned_thread" => "Spawned thread retained",
+        "read_only_native_zstd" => "Already compressed by Codex (read-only)",
         other => other,
     }
 }
@@ -63,10 +63,10 @@ pub fn render(value: &Value) {
             );
         }
         if matches.is_empty() {
-            println!("Aucun resultat dans l'index.");
+            println!("No matches in the index. Run `codex-vault index` to refresh it.");
         }
         if let Some(offset) = value["next_offset"].as_u64() {
-            println!("Suite : --offset {offset}");
+            println!("Next page: --offset {offset}");
         }
         return;
     }
@@ -74,26 +74,26 @@ pub fn render(value: &Value) {
         println!("{}", clean(text));
         if let Some(reference) = value["verified_reference"].as_object() {
             println!(
-                "Source verifiee : {} | ligne {}",
+                "Verified source: {} | line {}",
                 clean(reference["path"].as_str().unwrap_or("")),
                 reference["line"]
             );
         }
         if let Some(offset) = value["next_offset"].as_u64() {
-            println!("Suite : --offset {offset}");
+            println!("Next page: --offset {offset}");
         }
         return;
     }
     if value.get("index_bytes").is_some() {
         println!(
-            "Index : {} sources, {} passages, {}. Coffre total : {}.",
+            "Index: {} sources, {} passages, {}. Total vault size: {}.",
             value["sources"],
             value["passages"],
             format_size(value["index_bytes"].as_u64().unwrap_or(0)),
             format_size(value["vault_bytes"].as_u64().unwrap_or(0))
         );
         println!(
-            "Enregistrements trop volumineux ignores : {}",
+            "Oversized records skipped: {}",
             value["skipped_oversized_records"]
         );
         return;
@@ -106,7 +106,7 @@ pub fn render(value: &Value) {
     }
     if let Some(rows) = value.get("sessions").and_then(Value::as_array) {
         if let Some(total) = value.get("total_size_human").and_then(Value::as_str) {
-            println!("{} fichiers de conversation — {}", rows.len(), total);
+            println!("{} conversation files — {}", rows.len(), total);
         }
         for row in rows {
             render(row);
@@ -137,18 +137,18 @@ pub fn render(value: &Value) {
     }
     if let Some(a) = value.get("analysis") {
         if a["can_compact"] == true && a["estimated_removed_bytes"] == 0 {
-            println!("Deja compacte : aucun octet a retirer.");
+            println!("Already compact: no bytes to remove.");
             return;
         }
         if a["can_compact"] == true {
             println!(
-                "Structure compactable : {} recuperables sur {}.",
+                "Compaction candidate: {} removable from a {} rollout.",
                 format_size(a["estimated_removed_bytes"].as_u64().unwrap_or(0)),
                 format_size(a["original_size_bytes"].as_u64().unwrap_or(0))
             );
-            println!("Les protections de pagination, de sous-agent et de fichier ouvert restent appliquees a l'execution.");
+            println!("Pagination, spawned-thread and file-lock checks still apply when the operation runs.");
         } else {
-            println!("Compactage non applicable ; la sauvegarde reste disponible.");
+            println!("Compaction is not applicable; you can still create a backup.");
         }
         for reason in a["reasons"].as_array().into_iter().flatten() {
             if let Some(s) = reason.as_str() {
@@ -173,18 +173,18 @@ pub fn render(value: &Value) {
         }
     }
     if let Some(backup) = value["backup"].as_str() {
-        println!("Sauvegarde : {}", clean(backup));
+        println!("Backup: {}", clean(backup));
     }
     if let Some(stats) = value.get("stats") {
         if let Some(storage) = stats.get("storage") {
             let net = storage["net_saved_bytes"].as_i64().unwrap_or(0);
             println!(
-                "Gain net, sauvegardes et journaux compris : {}{}",
+                "Net savings, including backups and metadata: {}{}",
                 if net < 0 { "-" } else { "" },
                 format_size(net.unsigned_abs())
             );
             if storage["space_increased"] == true {
-                println!("Attention : cette operation augmente l'espace total occupe.");
+                println!("Warning: this operation increased total storage usage.");
             }
         }
         if let Some(plan) = stats.get("storage_preview") {
@@ -192,20 +192,20 @@ pub fn render(value: &Value) {
                 .as_i64()
                 .unwrap_or(0);
             println!(
-                "Nouvelle sauvegarde : {}. Gain net estime : {}{} (hors croissance du journal).",
+                "New backup: {}. Estimated net savings: {}{} (excluding journal growth).",
                 format_size(plan["new_backup_bytes"].as_u64().unwrap_or(0)),
                 if net < 0 { "-" } else { "" },
                 format_size(net.unsigned_abs())
             );
             if plan["may_increase_usage"] == true {
-                println!("Attention : le total peut augmenter, sauvegarde comprise.");
+                println!("Warning: total storage may increase after including the backup.");
             }
         }
         if let (Some(before), Some(after)) =
             (stats["input_size"].as_u64(), stats["result_size"].as_u64())
         {
             println!(
-                "{} → {} ({} recuperables sur le fichier actif)",
+                "{} → {} ({} removed from the active rollout)",
                 format_size(before),
                 format_size(after),
                 format_size(before.saturating_sub(after))
@@ -220,14 +220,14 @@ pub fn render(value: &Value) {
                 a["source_size_human"].as_str().unwrap_or(""),
                 clean(a["backup_path"].as_str().unwrap_or("")),
                 if a["is_current_restore_target"] == true {
-                    " [dernier etat sauvegarde]"
+                    " [latest saved state]"
                 } else {
                     ""
                 }
             );
         }
         if anchors.is_empty() {
-            println!("Aucune sauvegarde enregistree.");
+            println!("No recorded backups.");
         }
     }
     if let Some(candidates) = value["candidates"].as_array() {
@@ -250,14 +250,14 @@ fn prompt(text: &str) -> Result<Option<String>> {
 fn show_action(action: Result<Value>) {
     match action {
         Ok(value) => render(&value),
-        Err(err) => eprintln!("Erreur [{}] : {}", err.code(), clean(&err.to_string())),
+        Err(err) => eprintln!("Error [{}]: {}", err.code(), clean(&err.to_string())),
     }
 }
 
 fn conversation(path: &Path) -> Result<()> {
     loop {
-        println!("\nConversation : {}", clean(&path.display().to_string()));
-        println!("1. Analyser\n2. Sauvegarder l'etat actuel\n3. Compacter avec sauvegarde automatique\n4. Verifier les sauvegardes et la conversation\n5. Restaurer une sauvegarde\n0. Retour");
+        println!("\nConversation: {}", clean(&path.display().to_string()));
+        println!("1. Analyze\n2. Back up the current state\n3. Compact with an automatic recovery snapshot\n4. Verify backups and conversation\n5. Restore a backup\n0. Return");
         let Some(choice) = prompt("Action > ")? else {
             return Ok(());
         };
@@ -271,12 +271,12 @@ fn conversation(path: &Path) -> Result<()> {
                     || head.provenance.is_spawned_thread()
                     || !lineage_successors(&head.session_id, &head.page_id).is_empty()
                 {
-                    println!("Ce fichier est protege du compactage (compression Codex, sous-agent ou page suivie). Tu peux l'analyser ou verifier ses sauvegardes.");
+                    println!("This file is protected from compaction (Codex compression, a spawned thread or a page with a successor). You can analyze it or verify its backups.");
                     continue;
                 }
                 let analysis = analyze_session(path)?;
                 if analysis.can_compact && analysis.estimated_removed_bytes == Some(0) {
-                    println!("Deja compacte : aucune modification necessaire.");
+                    println!("Already compact: no changes needed.");
                     continue;
                 }
                 if !analysis.can_compact {
@@ -291,8 +291,8 @@ fn conversation(path: &Path) -> Result<()> {
                     },
                 )?;
                 render(&json!(preview));
-                if prompt("Compacter cette conversation ? [o/N] > ")?
-                    .is_some_and(|s| s.eq_ignore_ascii_case("o"))
+                if prompt("Compact this conversation? [y/N] > ")?
+                    .is_some_and(|s| s.eq_ignore_ascii_case("y") || s.eq_ignore_ascii_case("yes"))
                 {
                     show_action(compact_safe_impl(path).map(|v| json!(v)));
                 }
@@ -305,7 +305,7 @@ fn conversation(path: &Path) -> Result<()> {
                 if anchors.is_empty() {
                     continue;
                 }
-                let Some(input) = prompt("Numero de la sauvegarde (0 = retour) > ")? else {
+                let Some(input) = prompt("Backup number (0 = return) > ")? else {
                     return Ok(());
                 };
                 let selected = input
@@ -316,21 +316,21 @@ fn conversation(path: &Path) -> Result<()> {
                 if let Some(anchor) = selected {
                     let backup = PathBuf::from(anchor["backup_path"].as_str().unwrap());
                     println!(
-                        "Restaurer {}. L'etat actuel sera sauvegarde pour pouvoir annuler.",
+                        "Restore {}. The current state will be saved so you can undo this.",
                         clean(&backup.display().to_string())
                     );
-                    if prompt("Restaurer cette conversation ? [o/N] > ")?
-                        .is_some_and(|s| s.eq_ignore_ascii_case("o"))
-                    {
+                    if prompt("Restore this conversation? [y/N] > ")?.is_some_and(|s| {
+                        s.eq_ignore_ascii_case("y") || s.eq_ignore_ascii_case("yes")
+                    }) {
                         show_action(
                             restore_impl(path, RestoreTarget::Backup(backup)).map(|v| json!(v)),
                         );
                     }
                 } else if input != "0" {
-                    println!("Numero invalide.");
+                    println!("Invalid number.");
                 }
             }
-            _ => println!("Choisis un numero de 0 a 5."),
+            _ => println!("Choose a number from 0 to 5."),
         }
     }
 }
@@ -366,7 +366,7 @@ pub fn menu(cwd: Option<String>) -> Result<()> {
         }
         page = page.min(rows.len().saturating_sub(1) / PAGE);
         println!(
-            "\nCODEX VAULT — {} au total\n{} rollouts affiches — page {}/{}",
+            "\nCODEX VAULT — {} total\n{} matching rollouts — page {}/{}",
             format_size(total_size),
             rows.len(),
             page + 1,
@@ -376,7 +376,7 @@ pub fn menu(cwd: Option<String>) -> Result<()> {
             let date = chrono::DateTime::from_timestamp(s.modified_at as i64, 0)
                 .map(|d| {
                     d.with_timezone(&chrono::Local)
-                        .format("%d/%m %H:%M")
+                        .format("%Y-%m-%d %H:%M")
                         .to_string()
                 })
                 .unwrap_or_default();
@@ -387,7 +387,7 @@ pub fn menu(cwd: Option<String>) -> Result<()> {
                 date,
                 short(s.title.as_deref().unwrap_or(&s.session_id), 58),
                 if s.is_spawned_thread {
-                    " [sous-agent]"
+                    " [spawned thread]"
                 } else {
                     ""
                 }
@@ -395,11 +395,11 @@ pub fn menu(cwd: Option<String>) -> Result<()> {
             println!("     {}", short(&s.file_stem, 110));
             println!(
                 "     {}",
-                short(s.cwd_hint.as_deref().unwrap_or("Projet inconnu"), 110)
+                short(s.cwd_hint.as_deref().unwrap_or("Unknown project"), 110)
             );
         }
-        println!("Numero = ouvrir | /texte = rechercher un titre ou projet | n/p = pages | r = actualiser\ns = taille | d = date | a = afficher/masquer les sous-agents | f = fichier | q = quitter");
-        let Some(input) = prompt("Choix > ")? else {
+        println!("Number = open | /text = filter title or project | n/p = pages | r = refresh\ns = size | d = date | a = show/hide spawned threads | f = file | q = quit");
+        let Some(input) = prompt("Choice > ")? else {
             return Ok(());
         };
         match input.as_str() {
@@ -420,7 +420,7 @@ pub fn menu(cwd: Option<String>) -> Result<()> {
                 page = 0;
             }
             "f" => {
-                if let Some(reference) = prompt("Chemin du fichier .jsonl (Entree = retour) > ")? {
+                if let Some(reference) = prompt("Rollout file path (Enter = return) > ")? {
                     if reference.is_empty() {
                         continue;
                     }
@@ -447,7 +447,7 @@ pub fn menu(cwd: Option<String>) -> Result<()> {
                         eprintln!("{}", clean(&err.to_string()));
                     }
                 } else {
-                    println!("Choix invalide.");
+                    println!("Invalid choice.");
                 }
             }
         }

@@ -285,7 +285,7 @@ impl fmt::Display for VaultError {
             }
             VaultError::CodexManagedZstd { path } => write!(
                 f,
-                "{} is managed as .jsonl.zst by Codex; v0.1 treats Codex-compressed rollouts as \
+                "{} is managed as .jsonl.zst by Codex; Vault treats Codex-compressed rollouts as \
                  read-only. Rematerialize it in Codex before archive/compact/restore.",
                 path.display()
             ),

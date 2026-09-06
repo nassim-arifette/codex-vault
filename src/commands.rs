@@ -125,7 +125,7 @@ pub fn compact_safe_command(
                 "session_id": info.session_id,
                 "session": info.path.to_string_lossy(),
                 "status": "read_only_native_zstd",
-                "reason": ["Codex already manages this rollout as .jsonl.zst; v0.1 will not rewrite it"],
+                "reason": ["Codex already manages this rollout as .jsonl.zst; Vault will not rewrite it"],
             }));
             progress.item_done(&info.session_id);
             continue;

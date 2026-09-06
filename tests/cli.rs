@@ -63,7 +63,7 @@ impl CliSandbox {
             dir.path().join("codex/session_index.jsonl"),
             format!(
                 "{}\n",
-                json!({"id":"cli-test","thread_name":"Conversation de test"})
+                json!({"id":"cli-test","thread_name":"Test conversation"})
             ),
         )
         .unwrap();
@@ -104,7 +104,7 @@ fn cli_short_commands_roundtrip_and_integrity_exit_codes() {
     assert!(scan.status.success());
     assert_eq!(
         CliSandbox::value(&scan)["sessions"][0]["title"],
-        "Conversation de test"
+        "Test conversation"
     );
     let compact = sb.run(&["--json", "compact", "cli-test"], None);
     assert!(
@@ -163,7 +163,7 @@ fn menu_can_archive_compact_verify_and_restore_selected_session() {
     let before = fs::read(&sb.session).unwrap();
     let result = sb.run(
         &["menu"],
-        Some("/sample project\n1\n2\n3\no\n5\n1\no\n4\n0\nq\n"),
+        Some("/sample project\n1\n2\n3\ny\n5\n1\nyes\n4\n0\nq\n"),
     );
     assert!(
         result.status.success(),
@@ -178,7 +178,10 @@ fn menu_can_archive_compact_verify_and_restore_selected_session() {
     assert_eq!(fs::read(&sb.session).unwrap(), before);
     let states = CliSandbox::value(&sb.run(&["--json", "restore", "cli-test", "--list"], None));
     assert!(states["anchors"].as_array().unwrap().len() >= 2);
-    assert!(String::from_utf8_lossy(&result.stdout).contains("Conversation de test"));
+    let text = String::from_utf8_lossy(&result.stdout);
+    assert!(text.contains("Test conversation"));
+    assert!(text.contains("Net savings, including backups and metadata:"));
+    assert!(text.contains("Restore this conversation? [y/N]"));
 }
 
 #[test]
