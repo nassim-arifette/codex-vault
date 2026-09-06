@@ -15,6 +15,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $workspace 'target/release/codex-vault.exe') -Destination (Join-Path $stage 'codex-vault.exe')
         Copy-Item -LiteralPath (Join-Path $workspace 'LICENSE') -Destination $stage
         Copy-Item -LiteralPath (Join-Path $workspace 'README.md') -Destination $stage
+        Copy-Item -LiteralPath (Join-Path $workspace 'docs') -Destination $stage -Recurse
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'install.ps1') -Destination $stage
         $executableHash = (Get-FileHash -LiteralPath (Join-Path $stage 'codex-vault.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
         [IO.File]::WriteAllText((Join-Path $stage 'SHA256SUMS.txt'), "$executableHash *codex-vault.exe`n", [Text.UTF8Encoding]::new($false))
