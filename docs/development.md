@@ -2,7 +2,7 @@
 
 [Back to the overview](../README.md)
 
-Build from the repository root with a stable Rust toolchain. SQLite and the Windows C runtime are bundled in the release executable. Running a release does not require Rust.
+Build from the repository root with a stable Rust toolchain. SQLite and the C runtime are bundled in release executables. Running a release does not require Rust.
 
 ## Layout
 
@@ -60,6 +60,32 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo build --locked --release
 ```
 
+## Build on Linux
+
+For a native development build, use `cargo test --locked` and `cargo build --locked --release`.
+The downloadable Linux x86_64 package uses musl for a static executable:
+
+```bash
+# Debian/Ubuntu build dependencies (not required to run a release)
+sudo apt-get install build-essential musl-tools python3
+rustup target add x86_64-unknown-linux-musl
+bash scripts/package-linux.sh
+python3 scripts/test-linux-distribution.py dist/release/codex-vault-0.2.3-linux-x86_64.tar.gz
+```
+
+The packager rejects executables with a dynamic interpreter or shared-library dependencies.
+`--skip-build` uses the existing musl release binary. `CARGO_TARGET_DIR` is supported for builds
+outside the checkout. The archive contains the executable, installer, checksums, license and guides.
+
+The distribution check uses a temporary installation and Codex/Vault profile. It verifies static
+ELF headers, readable scan, archive, compact, deep doctor, exact SHA-256 restoration, bundled
+SQLite search and verified reads. Python 3.12+ is used for this test, not for running the CLI.
+An optional `--real-rollout PATH` exercises recovery on an isolated copy and checks that the
+read-only source is unchanged. `--report PATH` writes anonymous results without project paths.
+To verify the mounted-filesystem guard in WSL, point `TMPDIR` to a disposable directory on
+`/mnt/c` and add `--expect-9p-refusal`. It checks that compact and restore leave the transcript
+and recovery files unchanged. The normal lifecycle test belongs on a native Linux filesystem.
+
 ## Documentation and releases
 
 The README is the entry point; detailed guides live in `docs/`. Public examples and CI fixtures
@@ -70,7 +96,7 @@ For a Windows ZIP with its executable checksum, README, guides, license and inst
 
 ```powershell
 .\scripts\Package-Windows.ps1
-.\scripts\Test-Distribution.ps1 -Archive .\dist\release\codex-vault-0.2.1-windows-x86_64.zip
+.\scripts\Test-Distribution.ps1 -Archive .\dist\release\codex-vault-0.2.3-windows-x86_64.zip
 ```
 
 `-SkipBuild` packages an executable already built under `target/release`. The installer smoke
@@ -84,7 +110,8 @@ copy of a real rollout. `scripts/benchmark.py` generates and verifies 1/5/10 GB 
 
 For a release, update the Cargo version and lockfile, review `RELEASE_NOTES.md`, and push the
 tested changes. A matching `vVERSION` tag triggers CI; publication requires Windows/Linux checks,
-the pinned Codex differential matrix and fresh-runner installation to pass. The release includes
-a Windows ZIP and its SHA-256 file. Release artifacts include only explicitly selected public files.
+the pinned Codex differential matrix and fresh-runner installation on both platforms to pass.
+The release includes a Windows ZIP, a static Linux x86_64 tarball and one `SHA256SUMS.txt` covering
+both archives. Release artifacts include only explicitly selected public files.
 
 [Run the differential harness](differential-testing.md) · [Planned work](roadmap.md)

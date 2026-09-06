@@ -394,6 +394,9 @@ pub fn compact_safe_impl_within(path: &Path, window: usize) -> Result<CommandRes
 
 pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<CommandResult> {
     ensure_plain_native_session(path)?;
+    if !options.dry_run {
+        crate::fsatomic::ensure_supported_mutation_filesystem(path)?;
+    }
     let vault = if options.dry_run {
         crate::paths::vault_paths()
     } else {
@@ -805,6 +808,7 @@ fn resolve_restore_anchor(
 
 pub fn restore_impl(path: &Path, target: RestoreTarget) -> Result<CommandResult> {
     ensure_plain_native_session(path)?;
+    crate::fsatomic::ensure_supported_mutation_filesystem(path)?;
     let vault = ensure_vault_paths()?;
     let _operation = MutationGuard::acquire(&vault.root, path)?;
     let _lock = lock_session(path)?;

@@ -1,6 +1,6 @@
 [package]
 name = "codex-vault"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "Safe local archive and compaction utility for Codex JSONL sessions"
 license = "MIT"
@@ -20,6 +20,9 @@ zstd = "0.13"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

@@ -18,7 +18,7 @@ Vault creates and verifies a recovery snapshot before replacing a native transcr
 - temporary-file write + `sync_all()` + handle-based `FileRenameInfoEx` replacement on Windows
   10+ filesystems that support POSIX rename semantics (unsupported systems refuse the operation);
 - every scratch file is owned by an RAII guard, so any failure path deletes it instead of stranding megabytes next to the live transcript;
-- the replacement temp file is held with a deny-write/exclusive handle across the rename, so the lock follows the replacement inode while verification runs; the native file's DACL is preserved;
+- the replacement temp file is held with a deny-write/exclusive handle across the rename, so the lock follows the replacement inode while verification runs; Windows preserves the native file's DACL, while Linux uses advisory file locks and rename;
 - malformed JSON disables `compact`, which then falls back to a verified archive-only snapshot, records that snapshot in the journal, and leaves the native transcript unchanged;
 - automatic restore if the compacted file fails post-replacement verification;
 - `restore` captures the current transcript and commits its undo anchor in a `prepared` journal
@@ -51,5 +51,13 @@ The Windows replacement uses filesystem support for the documented rename semant
 operations are refused. See Microsoft's
 [SetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle)
 and [FILE_RENAME_INFORMATION](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information).
+
+Linux compaction and restoration check the transcript filesystem before creating a journal or
+changing any bytes. They refuse 9p/DrvFS mounts, including Windows drives exposed inside WSL.
+Local testing found that a locked replacement on such a mount could succeed and then fail to
+reopen for verification. The preflight refusal avoids entering that state. Use the Windows
+executable for Windows files or a copy on the Linux filesystem. Read-only operations and dry-run
+previews remain available. Linux advisory locks do not prevent writes by programs that ignore
+those locks; close the relevant Codex session before a mutation on either platform.
 
 [Codex format assumptions](codex-format.md) · [Journal and interrupted operations](recovery-journal.md)

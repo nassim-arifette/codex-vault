@@ -20,6 +20,8 @@ Today, use `doctor` to diagnose and `restore` to recover a state in the journal.
 
 ## Everyday use
 
+- Improve the optional terminal menu: clearer navigation, less clutter and better previews.
+  Direct commands remain the primary documented workflow.
 - Make refreshing the search index after compaction/restoration easier to discover and run.
 - Explain the cumulative storage cost of repeated snapshots and offer reviewable retention
   choices that respect recovery references.
@@ -31,9 +33,10 @@ Today, use `doctor` to diagnose and `restore` to recover a state in the journal.
 - Expand synthetic coverage for pagination, forks, rollbacks and long histories of different sizes.
 - Exercise longer sequences of conversation growth, compact, reindex and restore.
 - Keep unsupported layouts protected until their reconstruction and recovery behavior is understood.
+- Investigate safe Linux mutations on WSL Windows-drive mounts; current releases refuse them.
 
 ## Distribution
 
-Windows is the first downloadable target. Native Linux/macOS packages and Windows code signing
-are future work. Linux CI is useful coverage but is not the same as validating every supported
-filesystem, installation method or running Codex environment.
+Windows and Linux x86_64 packages are available. Linux uses a static musl binary, with local
+WSL2 validation and fresh-runner installation tests. macOS, ARM64 packages and Windows code
+signing are future work. CI does not validate every filesystem or running Codex environment.

@@ -142,6 +142,32 @@ requirement. The executable is unsigned (`NotSigned`). Command-line installation
 the interactive browser-download/SmartScreen flow was not exercised, so this test does not
 claim that users will never see a warning.
 
+## Linux and WSL2 release validation
+
+The locally built **v0.2.3 static Linux x86_64 archive** was installed and exercised under
+Ubuntu 24.04 on WSL2. These checks ran in isolated profiles on the Linux filesystem:
+
+- A synthetic conversation completed scan, archive, compaction, deep verification and an exact
+  SHA-256 restore. Bundled SQLite, search, verified passage reads and index rebuilding passed.
+  The installer also rejected a deliberately corrupted executable without replacing the installed copy.
+- A **278.40 MB real conversation copy** compacted to a **3.11 MB native transcript** and restored
+  byte for byte. The original source was read only and its SHA-256 stayed unchanged. These sizes
+  describe the native transcript, not net savings after retained backups.
+
+An additional Windows-drive probe exposed a verification failure after a locked replacement
+on WSL's 9p/DrvFS mount. The Linux CLI now refuses compact and restore on that filesystem before
+any mutation. The regression check verifies that both the transcript and recovery files remain
+unchanged. Use the Windows executable for conversations stored on Windows drives.
+
+[Synthetic installation results](validation/linux-wsl-0.2.3-synthetic.json) ·
+[Real-copy results](validation/linux-wsl-0.2.3-real-copy.json) ·
+[Mounted-filesystem refusal](validation/linux-wsl-0.2.3-mounted-refusal.json)
+
+These tests validate the packaged Linux executable and two local workloads. The 1/5/10 GB
+benchmarks above remain Windows measurements; they were not repeated on Linux. The full Codex
+reconstruction oracle still runs on Windows in CI. Linux CI runs the Rust suite and a separate
+installation/recovery check against its downloadable archive.
+
 ## Documentation visuals
 
 The menu and help previews use actual output from the release executable with synthetic

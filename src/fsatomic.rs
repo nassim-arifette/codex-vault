@@ -14,6 +14,42 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Suffix shared by every temporary file the vault creates, so leftovers are identifiable.
 pub const TEMP_SUFFIX: &str = ".tmp";
 
+/// WSL's Windows-drive mounts use 9p. A locked replacement there can succeed but
+/// fail when reopened for verification. Refuse before preparing any mutation.
+#[cfg(target_os = "linux")]
+pub fn ensure_supported_mutation_filesystem(path: &Path) -> Result<()> {
+    use std::ffi::CString;
+    use std::mem::MaybeUninit;
+    use std::os::unix::ffi::OsStrExt;
+    let native =
+        CString::new(path.as_os_str().as_bytes()).map_err(|_| VaultError::InvalidInput {
+            reason: "The session path contains a null byte.".into(),
+        })?;
+    let mut info = MaybeUninit::<libc::statfs>::uninit();
+    // SAFETY: the path is null-terminated, and statfs receives writable storage of its exact type.
+    if unsafe { libc::statfs(native.as_ptr(), info.as_mut_ptr()) } != 0 {
+        return Err(VaultError::io(
+            "checking the session filesystem",
+            path,
+            std::io::Error::last_os_error(),
+        ));
+    }
+    // SAFETY: a successful statfs call initialized the structure.
+    let info = unsafe { info.assume_init() };
+    // V9FS_MAGIC from Linux's <linux/magic.h>; includes WSL Windows-drive mounts.
+    if info.f_type == 0x0102_1997 {
+        return Err(VaultError::InvalidInput {
+            reason: "Linux compaction and restoration are not supported on 9p/DrvFS mounts (including Windows drives in WSL). Use Codex Vault for Windows for Windows files, or work on a copy in the Linux filesystem.".into(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn ensure_supported_mutation_filesystem(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
 pub fn temp_path_for(path: &Path, suffix: &str) -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let mut out = path.to_path_buf();

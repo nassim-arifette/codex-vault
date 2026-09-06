@@ -11,6 +11,8 @@ descriptions and examples. `compact` is the primary command; `compact-safe` rema
 
 ## Installation
 
+### Windows
+
 Download the Windows x86_64 ZIP and `SHA256SUMS.txt` from
 [Releases](https://github.com/nassim-arifette/codex-vault/releases) into the same directory.
 In PowerShell, calculate the ZIP checksum:
@@ -37,12 +39,53 @@ For a custom location, pass `-InstallDirectory C:\tools\CodexVault` to the insta
 To update, close running Vault/MCP processes and install the newer verified ZIP. Installation
 does not alter your conversation files or vault. [Build from source](development.md) if preferred.
 
+### Linux
+
+Download `codex-vault-VERSION-linux-x86_64.tar.gz` and `SHA256SUMS.txt` from
+[Releases](https://github.com/nassim-arifette/codex-vault/releases) into the same folder.
+Replace `VERSION` with the release number and verify before extracting:
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS.txt
+```
+
+Continue only if the Linux archive reports `OK`:
+
+```bash
+mkdir codex-vault-release
+tar -xzf codex-vault-VERSION-linux-x86_64.tar.gz -C codex-vault-release
+sh codex-vault-release/install.sh
+export PATH="$HOME/.local/bin:$PATH"
+codex-vault --version
+```
+
+The checksum command must report `OK` for the Linux archive. `--ignore-missing` allows the
+shared checksum file to list the Windows ZIP as well. The installer verifies the executable's
+own checksum before placing it in `~/.local/bin`. It needs no administrator privileges and does
+not edit your shell configuration; persist the PATH line in your shell's startup file if needed.
+For a custom location, run `sh codex-vault-release/install.sh /path/to/bin`.
+
+The executable is a static Linux x86_64 binary built with musl. SQLite, zstd and the C runtime
+are included; no separate library installation is required. You can also run the extracted
+`./codex-vault-release/codex-vault` directly. Native Linux and WSL2 use the same package.
+On WSL, Vault discovers the Linux user's `~/.codex` by default. Set `CODEX_HOME` explicitly to
+inspect a Windows profile under `/mnt/c`. Linux `compact` and `restore` refuse 9p/DrvFS mounts
+(including Windows drives in WSL) before changing the transcript or recovery journal. Use the
+Windows executable from Windows for those conversations, or work on a copy in the Linux
+filesystem. Read-only scan, analyze and compaction previews remain available on these mounts.
+
+To update, close running Vault/MCP processes and repeat installation from the new verified
+archive. The installer replaces only the executable. macOS and ARM64 binaries are not yet shipped.
+
 ## Menu
 
 ```powershell
 codex-vault menu
 codex-vault menu --cwd C:\projects\sample-app
 ```
+
+The menu remains available, but its navigation and presentation are planned for improvement.
+Use direct commands for the documented quick-start workflow.
 
 The menu lists titles, project paths, sizes and rollout files. Enter a number to select one.
 Use `/text` to filter titles or projects, `s` to sort by size, `d` by date, `n`/`p` for pages,

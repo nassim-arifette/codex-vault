@@ -1,0 +1,10 @@
+{
+  "version": "codex-vault 0.2.3",
+  "platform": "Linux x86_64",
+  "case": "9p-refusal",
+  "executable_sha256": "721bba61be5ed361a5cc09b1e334c9a7043f5e1e5168ae0015da84319b29632d",
+  "compact_refused_before_mutation": true,
+  "restore_refused_before_mutation": true,
+  "transcript_and_vault_unchanged": true,
+  "passed": true
+}

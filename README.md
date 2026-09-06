@@ -6,13 +6,15 @@
 - Refuses unsafe or unsupported compaction layouts.
 - Restores exact previously recorded states.
 - Differentially tested against Codex reconstruction.
-- Windows-first, with local SQLite search and read-only MCP tools.
+- Local SQLite search and read-only MCP tools.
 
-**Preview release · MIT · Windows x86_64**
+**Preview release · MIT · Windows & Linux x86_64**
 
 [Download](https://github.com/nassim-arifette/codex-vault/releases) · [CLI guide](docs/cli.md) · [Safety model](docs/safety-model.md) · [Roadmap](docs/roadmap.md)
 
 ## Install
+
+### Windows
 
 1. Download the Windows ZIP and `SHA256SUMS.txt` from [Releases](https://github.com/nassim-arifette/codex-vault/releases).
 2. Compare the ZIP's `Get-FileHash -Algorithm SHA256` result with `SHA256SUMS.txt`, then extract it.
@@ -26,19 +28,34 @@ Open a new terminal and run `codex-vault --help`. The installer checks the execu
 and adds it to your user PATH. No administrator rights, Rust, Node or separate SQLite installation
 are needed. The Windows binary is unsigned. [Detailed installation steps](docs/cli.md#installation)
 
-## Quick start
+### Linux
 
-Choose a conversation in the terminal menu:
+Download the Linux `.tar.gz` and `SHA256SUMS.txt` from
+[Releases](https://github.com/nassim-arifette/codex-vault/releases) into the same directory:
 
-```powershell
-codex-vault menu
+```bash
+sha256sum --check --ignore-missing SHA256SUMS.txt
 ```
 
-![CLI menu with synthetic conversations](docs/assets/cli-menu.png)
+If the Linux archive reports `OK`, extract and install it:
 
-*Actual CLI output rendered for documentation, using synthetic data.*
+```bash
+mkdir codex-vault-release
+tar -xzf codex-vault-*-linux-x86_64.tar.gz -C codex-vault-release
+sh codex-vault-release/install.sh
+export PATH="$HOME/.local/bin:$PATH"
+codex-vault --help
+```
 
-Or use direct commands from your project directory. Replace `SESSION_ID` with an ID or full
+The installer verifies the executable and copies it to `~/.local/bin`; add the PATH line to
+your shell configuration if needed. The Linux x86_64 binary is statically linked with musl,
+SQLite and zstd. No Rust or separate database runtime is required. WSL2 is supported for files
+in its Linux filesystem; use the Windows executable for conversations on Windows drives.
+[Linux installation details](docs/cli.md#linux)
+
+## Quick start
+
+Run direct commands from your project directory. Replace `SESSION_ID` with an ID or full
 rollout path from `scan`:
 
 ```powershell
@@ -52,7 +69,7 @@ codex-vault doctor SESSION_ID --deep
 `scan --paths` for full paths. JSON output always includes all matching files.
 
 Close the relevant Codex session before compacting or restoring. Direct commands apply without
-a confirmation prompt; the menu asks first. To restore the first saved state, use
+a confirmation prompt. To restore the first saved state, use
 `codex-vault restore SESSION_ID --original`.
 
 To find an older message:
@@ -96,6 +113,10 @@ Codex as the reconstruction oracle for allowed cases. One **278.40 MB real copy 
 after compaction and indexing — 57.62% net saved** — and restored exactly. The ZIP was installed
 and exercised locally through the user PATH. [Results, methodology and limits](docs/benchmarks.md).
 
+The **Linux v0.2.3 archive** was tested locally on Ubuntu 24.04 / WSL2: installation, SQLite search,
+and exact restoration of synthetic and 278.40 MB real-copy workloads passed on the Linux
+filesystem. [Linux validation and mount limitations](docs/benchmarks.md#linux-and-wsl2-release-validation)
+
 ## Safety model
 
 Vault verifies backups before replacement, records recovery references in a journal and checks
@@ -103,14 +124,14 @@ the result afterward. Unsupported layouts, pages required by later rollouts and 
 are protected; Codex-managed compressed rollouts remain read-only.
 
 CI checks reconstruction with **Codex 0.152.1 and 0.153.4**, plus Windows/Linux tests and installation
-on a fresh Windows runner. This covers the tested cases, not every future Codex format.
+on fresh Windows and Linux runners. This covers the tested cases, not every future Codex format.
 [How recovery works](docs/safety-model.md) · [What the harness proves](docs/differential-testing.md)
 
 ## Documentation
 
 | Guide | Contents |
 | --- | --- |
-| [CLI](docs/cli.md) | Installation, menu, command examples, scripting and exit codes |
+| [CLI](docs/cli.md) | Installation, command examples, scripting and exit codes |
 | [Safety model](docs/safety-model.md) | Backup, locking, replacement and storage guarantees |
 | [Codex format](docs/codex-format.md) | Cutoffs, pagination and compatibility boundaries |
 | [Differential testing](docs/differential-testing.md) | Synthetic fixtures, reconstruction oracle and negative control |
@@ -124,7 +145,7 @@ on a fresh Windows runner. This covers the tested cases, not every future Codex 
 - **Guided `repair`** for supported damage or interrupted operations, with a reviewable plan and recovery snapshot before changes.
 - Easier index refresh and clearer backup storage management across repeated compactions.
 - More Codex versions, rollout variants and concurrent live-session tests.
-- Broader platform distribution and Windows code signing.
+- macOS and ARM64 distribution, plus Windows code signing.
 
 These are planned, not shipped features. There is currently **no `repair` command**;
 `doctor` diagnoses and `restore` recovers recorded states. [See the roadmap](docs/roadmap.md).
