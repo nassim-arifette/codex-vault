@@ -190,6 +190,43 @@ fn scan_readable_output_limits_and_sorts_without_truncating_json() {
     assert_eq!(explicit["sessions"], with_flags["sessions"]);
 }
 
+#[cfg(unix)]
+#[test]
+fn unix_recovery_preserves_transcript_mode_and_keeps_vault_content_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let sb = CliSandbox::new();
+    fs::set_permissions(&sb.session, fs::Permissions::from_mode(0o640)).unwrap();
+    let original = fs::read(&sb.session).unwrap();
+    sb.ok(&["index"]);
+    let vault = sb.dir.path().join("vault");
+    assert_eq!(
+        fs::metadata(&vault).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    sb.ok(&["archive", "cli-test"]);
+    sb.ok(&["compact", "cli-test"]);
+    assert_eq!(
+        fs::metadata(&sb.session).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+    sb.ok(&["restore", "cli-test", "--original"]);
+    assert_eq!(fs::read(&sb.session).unwrap(), original);
+    assert_eq!(
+        fs::metadata(&sb.session).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+    sb.ok(&["index", "--rebuild"]);
+    for entry in walkdir::WalkDir::new(&vault) {
+        let entry = entry.unwrap();
+        assert_eq!(
+            entry.metadata().unwrap().permissions().mode() & 0o077,
+            0,
+            "Vault entry must not be accessible to group/other: {}",
+            entry.path().display()
+        );
+    }
+}
+
 #[test]
 fn scan_references_disambiguate_pages_and_empty_filters_are_clear() {
     let sb = CliSandbox::new();

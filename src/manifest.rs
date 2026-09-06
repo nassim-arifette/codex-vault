@@ -12,7 +12,7 @@ use crate::util::format_size;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Write as FmtWrite;
-use std::fs::{self, File};
+use std::fs;
 use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 
@@ -334,7 +334,7 @@ fn upgrade_v1(path: &Path, v: &Value) -> Result<Value> {
 pub fn write_manifest(key: &VaultKey, vault: &VaultPaths, manifest: &Manifest) -> Result<PathBuf> {
     let path = manifest_path(vault, key);
     let temp = TempFile::beside(&path, "manifest");
-    let mut file = File::create(temp.path())
+    let mut file = crate::fsatomic::create_private_file(temp.path())
         .map_err(|e| VaultError::io("creating manifest temp file", temp.path(), e))?;
     serde_json::to_writer_pretty(&mut file, manifest)
         .map_err(|e| VaultError::json("writing manifest", temp.path(), e))?;
@@ -402,6 +402,8 @@ pub fn write_summary(key: &VaultKey, vault: &VaultPaths, manifest: &Manifest) ->
         )
         .ok();
     }
-    fs::write(&path, body).map_err(|e| VaultError::io("writing summary", &path, e))?;
+    crate::fsatomic::create_private_file(&path)
+        .and_then(|mut file| file.write_all(body.as_bytes()))
+        .map_err(|e| VaultError::io("writing summary", &path, e))?;
     Ok(path)
 }

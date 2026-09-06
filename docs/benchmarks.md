@@ -144,7 +144,7 @@ claim that users will never see a warning.
 
 ## Linux and WSL2 release validation
 
-The locally built **v0.2.3 static Linux x86_64 archive** was installed and exercised under
+The locally built **v0.2.4 static Linux x86_64 archive** was installed and exercised under
 Ubuntu 24.04 on WSL2. These checks ran in isolated profiles on the Linux filesystem:
 
 - A synthetic conversation completed scan, archive, compaction, deep verification and an exact
@@ -159,9 +159,9 @@ on WSL's 9p/DrvFS mount. The Linux CLI now refuses compact and restore on that f
 any mutation. The regression check verifies that both the transcript and recovery files remain
 unchanged. Use the Windows executable for conversations stored on Windows drives.
 
-[Synthetic installation results](validation/linux-wsl-0.2.3-synthetic.json) ·
-[Real-copy results](validation/linux-wsl-0.2.3-real-copy.json) ·
-[Mounted-filesystem refusal](validation/linux-wsl-0.2.3-mounted-refusal.json)
+[Synthetic installation results](validation/linux-wsl-0.2.4-synthetic.json) ·
+[Real-copy results](validation/linux-wsl-0.2.4-real-copy.json) ·
+[Mounted-filesystem refusal](validation/linux-wsl-0.2.4-mounted-refusal.json)
 
 These tests validate the packaged Linux executable and two local workloads. The 1/5/10 GB
 benchmarks above remain Windows measurements; they were not repeated on Linux. The full Codex

@@ -14,6 +14,24 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Suffix shared by every temporary file the vault creates, so leftovers are identifiable.
 pub const TEMP_SUFFIX: &str = ".tmp";
 
+/// Create sensitive output privately from the first byte, independently of the user's umask.
+pub fn create_private_file(path: &Path) -> std::io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(file)
+}
+
 /// WSL's Windows-drive mounts use 9p. A locked replacement there can succeed but
 /// fail when reopened for verification. Refuse before preparing any mutation.
 #[cfg(target_os = "linux")]
@@ -111,6 +129,16 @@ impl TempFile {
     /// Rename through the held handle instead (Windows 10+ FileRenameInfoEx). POSIX rename
     /// semantics keep the source guard alive while the name starts referring to the new file.
     pub fn replace_locked(mut self, dest: &Path) -> Result<File> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let original = fs::metadata(dest)?;
+            let replacement = fs::metadata(&self.path)?;
+            if original.uid() != replacement.uid() || original.gid() != replacement.gid() {
+                std::os::unix::fs::chown(&self.path, Some(original.uid()), Some(original.gid()))?;
+            }
+            fs::set_permissions(&self.path, original.permissions())?;
+        }
         #[cfg(windows)]
         let guard = {
             preserve_windows_dacl(dest, &self.path)?;
@@ -266,11 +294,14 @@ pub struct MutationGuard {
 impl MutationGuard {
     pub fn acquire(vault: &Path, session: &Path) -> Result<Self> {
         fn acquire_file(path: &Path, session: &Path) -> Result<File> {
-            let f = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(false)
+            let mut options = OpenOptions::new();
+            options.read(true).write(true).create(true).truncate(false);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let f = options
                 .open(path)
                 .map_err(|e| VaultError::io("opening operation lock", path, e))?;
             FileExt::try_lock_exclusive(&f).map_err(|source| VaultError::SessionLocked {
@@ -430,7 +461,7 @@ pub fn copy_compacted_transcript(
     let mut source_hasher = Sha256::new();
     let mut result_hasher = Sha256::new();
     let mut reader = BufReader::new(File::open(src)?);
-    let mut output = BufWriter::new(File::create(dst)?);
+    let mut output = BufWriter::new(create_private_file(dst)?);
     let mut line = String::new();
     let mut physical_index = 0usize;
     let mut kept_lines = 0usize;

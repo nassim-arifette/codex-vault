@@ -109,6 +109,8 @@ def test(archive, real_rollout, expect_9p_refusal=False):
             shutil.copyfile(real_rollout, session)
         else:
             seed(session, root / 'sample-project')
+        if not expect_9p_refusal:
+            session.chmod(0o640)
         before_hash = digest(session)
         before_bytes = session.stat().st_size
         require(len(invoke('scan')['sessions']) == 1, 'Isolated discovery failed')
@@ -136,6 +138,7 @@ def test(archive, real_rollout, expect_9p_refusal=False):
         invoke('compact', session)
         compacted_bytes = session.stat().st_size
         require(compacted_bytes < before_bytes, 'Compaction did not shrink the fixture')
+        require(session.stat().st_mode & 0o777 == 0o640, 'Compaction changed transcript permissions')
         invoke('doctor', session, '--deep')
         if not real_rollout:
             invoke('index')
@@ -145,17 +148,22 @@ def test(archive, real_rollout, expect_9p_refusal=False):
             require('authentication' in passage['text'], 'Verified passage read failed')
         invoke('restore', session, '--original')
         require(digest(session) == before_hash, 'Restoration was not byte-exact')
+        require(session.stat().st_mode & 0o777 == 0o640, 'Restore changed transcript permissions')
         invoke('doctor', session, '--deep')
         if real_rollout:
             require(digest(real_rollout) == source_hash == before_hash, 'Original source changed')
         else:
             invoke('index', '--rebuild')
             require(bool(invoke('search', 'authentication')['matches']), 'Search after restoration failed')
+        vault = root / 'vault'
+        for entry in [vault, *vault.rglob('*')]:
+            require(entry.stat().st_mode & 0o077 == 0, 'Vault content is accessible to group/other')
         return dict(version=version, platform='Linux x86_64', kernel=platform.release(),
                     case='real-rollout-copy' if real_rollout else 'synthetic', static_elf=True,
                     executable_sha256=digest(binary), installed_from_archive=True,
                     original_bytes=before_bytes, compacted_bytes=compacted_bytes,
-                    sha256_restore_exact=True, source_unchanged=True if real_rollout else None,
+                    sha256_restore_exact=True, unix_permissions_verified=True,
+                    source_unchanged=True if real_rollout else None,
                     sqlite_search_verified=None if real_rollout else True, passed=True)
 
 

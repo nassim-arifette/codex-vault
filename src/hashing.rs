@@ -54,7 +54,7 @@ pub fn sha256_zstd_decompressed(path: &Path) -> Result<String> {
 
 pub fn compress_file_with_input_sha(src: &Path, dst: &Path, level: i32) -> Result<String> {
     let mut source = File::open(src)?;
-    let target = File::create(dst)?;
+    let target = crate::fsatomic::create_private_file(dst)?;
     let mut encoder = Encoder::new(target, level)?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; CHUNK_SIZE];
@@ -73,7 +73,7 @@ pub fn compress_file_with_input_sha(src: &Path, dst: &Path, level: i32) -> Resul
 
 pub fn decompress_file(src: &Path, dst: &Path) -> Result<()> {
     let mut decoder = Decoder::new(File::open(src)?)?;
-    let mut target = File::create(dst)?;
+    let mut target = crate::fsatomic::create_private_file(dst)?;
     io::copy(&mut decoder, &mut target)?;
     target.sync_all()?;
     Ok(())

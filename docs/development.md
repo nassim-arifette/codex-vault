@@ -70,7 +70,7 @@ The downloadable Linux x86_64 package uses musl for a static executable:
 sudo apt-get install build-essential musl-tools python3
 rustup target add x86_64-unknown-linux-musl
 bash scripts/package-linux.sh
-python3 scripts/test-linux-distribution.py dist/release/codex-vault-0.2.3-linux-x86_64.tar.gz
+python3 scripts/test-linux-distribution.py dist/release/codex-vault-0.2.4-linux-x86_64.tar.gz
 ```
 
 The packager rejects executables with a dynamic interpreter or shared-library dependencies.
@@ -96,7 +96,7 @@ For a Windows ZIP with its executable checksum, README, guides, license and inst
 
 ```powershell
 .\scripts\Package-Windows.ps1
-.\scripts\Test-Distribution.ps1 -Archive .\dist\release\codex-vault-0.2.3-windows-x86_64.zip
+.\scripts\Test-Distribution.ps1 -Archive .\dist\release\codex-vault-0.2.4-windows-x86_64.zip
 ```
 
 `-SkipBuild` packages an executable already built under `target/release`. The installer smoke

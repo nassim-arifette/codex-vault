@@ -113,7 +113,7 @@ Codex as the reconstruction oracle for allowed cases. One **278.40 MB real copy 
 after compaction and indexing — 57.62% net saved** — and restored exactly. The ZIP was installed
 and exercised locally through the user PATH. [Results, methodology and limits](docs/benchmarks.md).
 
-The **Linux v0.2.3 archive** was tested locally on Ubuntu 24.04 / WSL2: installation, SQLite search,
+The **Linux v0.2.4 archive** was tested locally on Ubuntu 24.04 / WSL2: installation, SQLite search,
 and exact restoration of synthetic and 278.40 MB real-copy workloads passed on the Linux
 filesystem. [Linux validation and mount limitations](docs/benchmarks.md#linux-and-wsl2-release-validation)
 

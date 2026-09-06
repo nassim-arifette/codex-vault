@@ -42,6 +42,12 @@ rollout is a no-op with zero savings. `prune` does not remove referenced recover
 
 ## Boundaries
 
+On Unix, new vault directories are created with mode `0700`, and sensitive output files with
+`0600`, independently of the shell's umask. Indexing also restricts an existing index to `0600`.
+Compact and restore preserve the transcript's owner, group and Unix permission bits; inability
+to preserve ownership refuses replacement. Extended POSIX ACLs are not copied. Existing custom
+vault directories keep their directory permissions; generated contents are private.
+
 Close the relevant Codex session before compaction or restoration. Locks and hash checks protect
 the operation itself; they are not a claim that compacting actively used conversations is validated.
 Keep the recovery journal with its backups. SQLite is a derived search index and is not needed

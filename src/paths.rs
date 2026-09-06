@@ -114,12 +114,23 @@ pub fn vault_paths() -> VaultPaths {
     }
 }
 
+pub fn create_private_directory(path: &Path) -> std::io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path)
+}
+
 pub fn ensure_vault_paths() -> Result<VaultPaths> {
     let paths = vault_paths();
-    fs::create_dir_all(&paths.root)?;
-    fs::create_dir_all(&paths.manifests)?;
-    fs::create_dir_all(&paths.summaries)?;
-    fs::create_dir_all(&paths.backups)?;
+    create_private_directory(&paths.root)?;
+    create_private_directory(&paths.manifests)?;
+    create_private_directory(&paths.summaries)?;
+    create_private_directory(&paths.backups)?;
     Ok(paths)
 }
 

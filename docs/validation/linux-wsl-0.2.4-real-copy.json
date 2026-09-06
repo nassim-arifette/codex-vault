@@ -1,0 +1,16 @@
+{
+  "version": "codex-vault 0.2.4",
+  "platform": "Linux x86_64",
+  "kernel": "6.6.87.2-microsoft-standard-WSL2",
+  "case": "real-rollout-copy",
+  "static_elf": true,
+  "executable_sha256": "c4a3f602022d0cde5ed3ed7ea81363cf4b17f5738765ed1d00bb113775a766f9",
+  "installed_from_archive": true,
+  "original_bytes": 278400231,
+  "compacted_bytes": 3106096,
+  "sha256_restore_exact": true,
+  "unix_permissions_verified": true,
+  "source_unchanged": true,
+  "sqlite_search_verified": null,
+  "passed": true
+}

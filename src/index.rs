@@ -294,12 +294,20 @@ pub fn build(cwd: Option<&Path>, rebuild: bool) -> Result<Value> {
         return Err(invalid("--rebuild rebuilds the entire corpus; omit --cwd"));
     }
     let vault = vault_paths();
-    fs::create_dir_all(&vault.root)?;
+    crate::paths::create_private_directory(&vault.root)?;
     let path = database_path();
     let _guard = MutationGuard::acquire(&vault.root, &vault.root)?;
     let old_bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
     let is_new = rebuild || !path.exists();
     let temp = is_new.then(|| TempFile::beside(&path, "reindex"));
+    if let Some(temp) = &temp {
+        drop(crate::fsatomic::create_private_file(temp.path())?);
+    }
+    #[cfg(unix)]
+    if path.is_file() {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+    }
     let mut conn = Connection::open(temp.as_ref().map(|t| t.path()).unwrap_or(&path))?;
     conn.busy_timeout(Duration::from_secs(5))?;
     conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=DELETE;")?;
