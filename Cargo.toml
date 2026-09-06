@@ -1,6 +1,6 @@
 [package]
 name = "codex-vault"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "Safe local archive and compaction utility for Codex JSONL sessions"
 license = "MIT"

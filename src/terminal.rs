@@ -11,6 +11,7 @@ use codex_vault::ops::{
 use codex_vault::rollout::{is_codex_zstd_jsonl, read_session_head};
 use codex_vault::util::format_size;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -48,6 +49,83 @@ fn label(status: &str) -> &str {
         "skipped_spawned_thread" => "Spawned thread retained",
         "read_only_native_zstd" => "Already compressed by Codex (read-only)",
         other => other,
+    }
+}
+
+/// Keep scan presentation separate from batch reports and the complete JSON contract.
+pub fn render_scan(value: &Value, all: bool, paths: bool) {
+    let Some(sessions) = value["sessions"].as_array() else {
+        return;
+    };
+    println!(
+        "{} conversation file{} — {} total",
+        sessions.len(),
+        if sessions.len() == 1 { "" } else { "s" },
+        value["total_size_human"].as_str().unwrap_or("0 B")
+    );
+    if sessions.is_empty() {
+        println!("No matching conversations found.");
+        return;
+    }
+
+    let mut rows: Vec<_> = sessions.iter().collect();
+    rows.sort_by(|a, b| {
+        b["size_bytes"]
+            .as_u64()
+            .cmp(&a["size_bytes"].as_u64())
+            .then_with(|| a["path"].as_str().cmp(&b["path"].as_str()))
+    });
+    // A thread can have several rollout pages. Count all results, including hidden ones,
+    // so a displayed reference selects a file rather than an ambiguous thread ID.
+    let mut references = HashMap::new();
+    for row in &rows {
+        let id = row["session_id"].as_str().unwrap_or("");
+        let stem = row["file_stem"].as_str().unwrap_or("");
+        *references.entry(id).or_insert(0usize) += 1;
+        if stem != id {
+            *references.entry(stem).or_insert(0usize) += 1;
+        }
+    }
+    let shown = if all { rows.len() } else { rows.len().min(5) };
+    println!("Showing {shown} of {}, largest first.\n", rows.len());
+    println!("{:>10}  {:42}  PROJECT", "SIZE", "CONVERSATION");
+    for row in rows.iter().take(shown) {
+        let project_path = row["cwd_hint"].as_str().unwrap_or("");
+        // Handle both path separators even when inspecting Windows rollouts on Unix.
+        let project = project_path
+            .rsplit(['/', '\\'])
+            .find(|part| !part.is_empty())
+            .unwrap_or("(unknown)");
+        println!(
+            "{:>10}  {:42}  {}",
+            format_size(row["size_bytes"].as_u64().unwrap_or(0)),
+            short(row["title"].as_str().unwrap_or("Untitled conversation"), 42),
+            short(project, 22)
+        );
+        if paths {
+            println!("            Project: {}", clean(project_path));
+            println!(
+                "            Path: {}",
+                clean(row["path"].as_str().unwrap_or(""))
+            );
+        } else {
+            let reference = ["session_id", "file_stem"]
+                .iter()
+                .filter_map(|key| row[key].as_str())
+                .find(|reference| !reference.is_empty() && references.get(reference) == Some(&1))
+                .unwrap_or(row["path"].as_str().unwrap_or(""));
+            println!("            Ref: {}", clean(reference));
+        }
+    }
+    if shown < rows.len() {
+        let remaining = rows.len() - shown;
+        println!(
+            "\n{remaining} more file{}. Use --all to show every result, or --cwd PATH to filter by project.",
+            if remaining == 1 { "" } else { "s" }
+        );
+    }
+    if !paths {
+        println!("\nUse Ref with analyze, compact or doctor. Add --paths for full paths.");
     }
 }
 

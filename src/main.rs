@@ -126,13 +126,19 @@ enum Command {
     },
     /// Find native Codex JSONL sessions.
     #[command(
-        after_help = "Examples:\n  codex-vault scan\n  codex-vault scan --cwd .\n  codex-vault --json scan\n\nUse a session ID or a full rollout path with analyze, archive, compact, doctor or restore."
+        after_help = "Examples:\n  codex-vault scan\n  codex-vault scan --all\n  codex-vault scan --cwd . --paths\n  codex-vault --json scan\n\nReadable output shows the five largest files first. Use Ref with analyze, archive, compact, doctor or restore. JSON output always includes every matching file and its full paths."
     )]
     #[command(display_order = 2)]
     Scan {
         /// Restrict to sessions whose SessionMeta cwd is related to this path.
         #[arg(long)]
         cwd: Option<String>,
+        /// Show every matching file in readable output instead of the five largest.
+        #[arg(long)]
+        all: bool,
+        /// Include full project and rollout paths in readable output.
+        #[arg(long)]
+        paths: bool,
     },
     /// Analyze whether a session has a provably bounded reconstruction suffix.
     #[command(
@@ -322,7 +328,7 @@ fn run(command: Command, batch: BatchOptions) -> Result<Value> {
             offset,
         } => codex_vault::index::read(&id, cwd.as_deref().map(std::path::Path::new), offset, limit),
         Command::Menu { .. } => unreachable!("menu handled before JSON commands"),
-        Command::Scan { cwd } => scan_command(cwd),
+        Command::Scan { cwd, .. } => scan_command(cwd),
         Command::Analyze {
             session,
             session_flag,
@@ -416,7 +422,7 @@ fn main() -> ExitCode {
     };
     if let Some(cwd) = menu_cwd {
         if cli.json {
-            eprintln!("Le menu est interactif. Utilise une commande directe avec --json.");
+            eprintln!("The menu is interactive. Use a direct command with --json.");
             return ExitCode::from(2);
         }
         return match terminal::menu(cwd) {
@@ -429,6 +435,10 @@ fn main() -> ExitCode {
     }
     let compact = cli.json;
     let human = cli.human || (!cli.json && io::stdout().is_terminal());
+    let scan_display = match &cli.command {
+        Some(Command::Scan { all, paths, .. }) => Some((*all, *paths)),
+        _ => None,
+    };
     let batch = BatchOptions {
         jobs: cli.jobs,
         progress: ProgressMode::from_flags(cli.progress, cli.no_progress),
@@ -436,7 +446,11 @@ fn main() -> ExitCode {
     match run(cli.command.unwrap(), batch) {
         Ok(output) => {
             if human {
-                terminal::render(&output);
+                if let Some((all, paths)) = scan_display {
+                    terminal::render_scan(&output, all, paths);
+                } else {
+                    terminal::render(&output);
+                }
             } else {
                 print_json(&output, &mut io::stdout().lock(), compact);
             }

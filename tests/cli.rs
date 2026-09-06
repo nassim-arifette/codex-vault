@@ -110,6 +110,115 @@ impl CliSandbox {
 }
 
 #[test]
+fn scan_readable_output_limits_and_sorts_without_truncating_json() {
+    let sb = CliSandbox::new();
+    let mut titles = fs::OpenOptions::new()
+        .append(true)
+        .open(sb.dir.path().join("codex/session_index.jsonl"))
+        .unwrap();
+    for rank in [3, 1, 6, 2, 5, 4] {
+        let id = format!("scan-{rank}");
+        let meta =
+            json!({"type":"session_meta","payload":{"id":id,"cwd":"C:\\projects\\sample-app"}});
+        let message = json!({"type":"event_msg","payload":{"type":"user_message","message":"x".repeat(rank * 4096)}});
+        fs::write(
+            sb.session
+                .parent()
+                .unwrap()
+                .join(format!("rollout-{id}.jsonl")),
+            format!("{meta}\n{message}\n"),
+        )
+        .unwrap();
+        writeln!(
+            titles,
+            "{}",
+            json!({"id":id,"thread_name":format!("Conversation {rank}")})
+        )
+        .unwrap();
+    }
+    let output = sb.run(&["--human", "scan"], None);
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("7 conversation files"));
+    assert!(text.contains("Showing 5 of 7, largest first."));
+    assert_eq!(text.matches("Ref:").count(), 5);
+    assert!(text.contains("2 more files. Use --all"));
+    assert!(text.contains("sample-app"));
+    assert!(!text.contains("C:\\projects"));
+    assert!(!text.contains("rollout-scan"));
+    assert!(!text.contains("Conversation 1"));
+    assert!(!text.contains("Test conversation"));
+    let positions: Vec<_> = (2..=6)
+        .rev()
+        .map(|rank| text.find(&format!("Conversation {rank}")).unwrap())
+        .collect();
+    assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+
+    let output = sb.run(&["scan", "--human", "--all"], None);
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("Showing 7 of 7, largest first."));
+    assert_eq!(text.matches("Ref:").count(), 7);
+    assert!(text.contains("Conversation 1"));
+    assert!(text.contains("Test conversation"));
+    assert!(!text.contains("more files"));
+
+    let output = sb.run(&["--human", "scan", "--paths"], None);
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("Showing 5 of 7"));
+    assert!(text.contains("Project: C:\\projects\\sample-app"));
+    let displayed_path = text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("Path: "))
+        .unwrap();
+    assert_eq!(
+        PathBuf::from(displayed_path).canonicalize().unwrap(),
+        sb.session
+            .parent()
+            .unwrap()
+            .join("rollout-scan-6.jsonl")
+            .canonicalize()
+            .unwrap()
+    );
+
+    let redirected = sb.ok(&["scan"]);
+    let explicit = sb.ok(&["--json", "scan"]);
+    let with_flags = sb.ok(&["--json", "scan", "--all", "--paths"]);
+    assert_eq!(redirected["sessions"].as_array().unwrap().len(), 7);
+    assert_eq!(redirected["sessions"], explicit["sessions"]);
+    assert_eq!(explicit["sessions"], with_flags["sessions"]);
+}
+
+#[test]
+fn scan_references_disambiguate_pages_and_empty_filters_are_clear() {
+    let sb = CliSandbox::new();
+    let other = sb
+        .session
+        .parent()
+        .unwrap()
+        .join("rollout-another-page.jsonl");
+    fs::copy(&sb.session, &other).unwrap();
+    let output = sb.run(&["--human", "scan"], None);
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("Ref: rollout-cli-test"));
+    assert!(text.contains("Ref: rollout-another-page"));
+    assert!(!text.contains("Ref: cli-test"));
+    // Equal-size pages have a deterministic path order; either displayed reference resolves.
+    assert!(text.find("Ref: rollout-another-page") < text.find("Ref: rollout-cli-test"));
+    sb.ok(&["analyze", "rollout-cli-test"]);
+    sb.ok(&["analyze", "rollout-another-page"]);
+
+    let output = sb.run(&["--human", "scan", "--cwd", "/no-matching-project"], None);
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("0 conversation files"));
+    assert!(text.contains("No matching conversations found."));
+    assert!(!text.contains("Ref:"));
+}
+
+#[test]
 fn cli_short_commands_roundtrip_and_integrity_exit_codes() {
     let sb = CliSandbox::new();
     let original = fs::read(&sb.session).unwrap();

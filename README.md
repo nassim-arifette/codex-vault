@@ -48,6 +48,9 @@ codex-vault compact SESSION_ID
 codex-vault doctor SESSION_ID --deep
 ```
 
+`scan` shows the five largest files first. Use `scan --all` for the full list or
+`scan --paths` for full paths. JSON output always includes all matching files.
+
 Close the relevant Codex session before compacting or restoring. Direct commands apply without
 a confirmation prompt; the menu asks first. To restore the first saved state, use
 `codex-vault restore SESSION_ID --original`.

@@ -54,8 +54,24 @@ when both stdin and stdout are terminals; otherwise it shows help and exits with
 
 ## Session references and project filters
 
+`scan` shows the **five largest rollout files**, with conversation titles, short project names
+and a copyable `Ref`. Add `--all` to list every matching file, still largest first. Add `--paths`
+when you need full project and rollout paths, including projects with the same directory name.
+
+```powershell
+codex-vault scan
+codex-vault scan --all
+codex-vault scan --cwd . --paths
+codex-vault --json scan
+```
+
+The summary always counts all matching files. JSON output (also the default when redirected)
+continues to include **every** matching file and its complete metadata; `--all` and `--paths`
+only affect readable output. Use `--human` to keep the readable summary when redirecting.
+
 In the examples, replace `SESSION_ID` with a session ID, a rollout filename stem or a full
-rollout path returned by `scan`. Use a full path to select a particular page of a conversation.
+rollout path returned by `scan`. `Ref` uses a filename stem when several pages share a session ID;
+use `scan --paths` for a full path to a particular file.
 Quote paths containing spaces. `--session SESSION_ID` remains available on analyze, archive,
 compact and doctor as an alternative to the positional argument.
 
