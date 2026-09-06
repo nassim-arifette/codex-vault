@@ -223,8 +223,12 @@ def run_case(binary, root, gb, seed):
     runner.run("doctor_final_deep", "doctor", target, "--deep")
     runner.run("index_restored", "index")
     assert runner.run("read_restored", "read", passage)["text"] == PROBE
+    indexed_storage = next(op["storage_after"] for op in runner.metrics if op["operation"] == "index")
     result = dict(requested_gb=gb, generated=generated, operations=runner.metrics, passed=True,
                   restored_sha256=restored_hash, compact_storage=compact_storage,
+                  indexed_storage=indexed_storage,
+                  net_saved_after_index_bytes=generated["bytes"] - indexed_storage["total_bytes"],
+                  net_saved_after_index_percent=100 * (1 - indexed_storage["total_bytes"] / generated["bytes"]),
                   backup_compression_ratio=compact_storage["backup_bytes"] / generated["bytes"],
                   net_saved_bytes=generated["bytes"] - compact_storage["total_bytes"],
                   net_saved_percent=100 * (1 - compact_storage["total_bytes"] / generated["bytes"]))
@@ -248,12 +252,12 @@ def clean_generated_case(root, run_root):
 
 def markdown(report):
     lines = ["# Multi-GB Windows benchmark", "", f"Vault `{report['vault_version']}`; decimal GB. Synthetic tool-heavy data.", "",
-             "| Input | Compact | Peak RAM (all operations) | Net savings, backups included | Exact restore |",
+             "| Input | Compact | Peak RAM (all operations) | Net saved, backups + index included | Exact restore |",
              "| --- | ---: | ---: | ---: | --- |"]
     for case in report["cases"]:
         compact = next(o for o in case["operations"] if o["operation"] == "compact")
         peak = max(o["peak_ram_bytes"] for o in case["operations"])
-        lines.append(f"| {case['requested_gb']:g} GB | {compact['seconds']:.2f} s | {peak/1e6:.1f} MB | {case['net_saved_percent']:.2f}% | PASS |")
+        lines.append(f"| {case['requested_gb']:g} GB | {compact['seconds']:.2f} s | {peak/1e6:.1f} MB | {case['net_saved_after_index_percent']:.2f}% | PASS |")
     for case in report["cases"]:
         lines += ["", f"## {case['requested_gb']:g} GB", "", "| Operation | Seconds | Peak RAM (MB) | Read (GB) | Written (GB) |", "| --- | ---: | ---: | ---: | ---: |"]
         for op in case["operations"]:

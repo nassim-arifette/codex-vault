@@ -112,6 +112,8 @@ try {
         fresh_powershell_user_path=$true; real_scan_found_sessions=$true;
         copied_input_bytes=$sourceSize; compacted_native_bytes=$nativeAfter;
         storage_after_compact=$compact.stats.storage.after; index_bytes=$index.index_bytes;
+        total_bytes_after_compact_and_index=($nativeAfter + $index.vault_bytes);
+        net_saved_after_index_percent=(100 * (1 - ($nativeAfter + $index.vault_bytes) / $sourceSize));
         restored_sha256_matches=$true; original_unchanged=$true; indexed_passage_verified=$true;
         authenticode_status=(Get-AuthenticodeSignature -LiteralPath $installed).Status.ToString();
         portable_import_check='Run Test-Distribution.ps1 against the same ZIP; see private portable-check.log.';

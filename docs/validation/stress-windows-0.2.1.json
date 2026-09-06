@@ -1,0 +1,1439 @@
+{
+  "schema_version": 1,
+  "vault_version": "codex-vault 0.2.1",
+  "binary_sha256": "6f96c91618448c2733422a4a0d3c7c6f7b4473b782147a6a803f37101a47781e",
+  "system": {
+    "os": "Windows-10-10.0.26200-SP0",
+    "machine": "AMD64",
+    "logical_cpus": 8,
+    "cpu": "11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz",
+    "physical_memory_bytes": 12612919296,
+    "windows_caption": "Windows 11 Pro",
+    "caption_source": "Local Win32_OperatingSystem inventory"
+  },
+  "generator": {
+    "seed": 20260906,
+    "python": "3.11.0",
+    "entropy_fraction": 0.35,
+    "live_tail_fraction": 0.01
+  },
+  "measurement": {
+    "ram": "Windows PeakWorkingSetSize of each CLI process; excludes generator and child processes",
+    "io": "Windows process IO transfer counters: logical I/O, not physical device traffic",
+    "disk": "Logical file lengths; temporary disk usage sampled every 200 ms",
+    "cache": "Warm/OS-managed cache; no cache flush; sequential operations; one worker"
+  },
+  "cases": [
+    {
+      "requested_gb": 1.0,
+      "generated": {
+        "bytes": 1000029247,
+        "records": 51173,
+        "turns": 6396,
+        "checkpoints": 3,
+        "sha256": "43f14977bf8a16793659be53378f3b318082d8f7c5a0df4066ff8b34c14fb79b"
+      },
+      "operations": [
+        {
+          "operation": "scan",
+          "seconds": 0.87,
+          "exit_code": 0,
+          "peak_ram_bytes": 9981952,
+          "approximate_read_bytes": 12246,
+          "approximate_write_bytes": 901,
+          "input_bytes": 1000029247,
+          "output_bytes": 1000029247,
+          "backup_bytes": 0,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 1000029247
+          },
+          "storage_after": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 1000029247
+          },
+          "sampled_peak_storage_bytes": 1000029247,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "analyze",
+          "seconds": 11.431,
+          "exit_code": 0,
+          "peak_ram_bytes": 18378752,
+          "approximate_read_bytes": 1000034846,
+          "approximate_write_bytes": 779,
+          "input_bytes": 1000029247,
+          "output_bytes": 1000029247,
+          "backup_bytes": 0,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 1000029247
+          },
+          "storage_after": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 1000029247
+          },
+          "sampled_peak_storage_bytes": 1000029247,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "archive",
+          "seconds": 13.631,
+          "exit_code": 0,
+          "peak_ram_bytes": 12304384,
+          "approximate_read_bytes": 2496113084,
+          "approximate_write_bytes": 248002731,
+          "input_bytes": 1000029247,
+          "output_bytes": 1000029247,
+          "backup_bytes": 247998922,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 1000029247
+          },
+          "storage_after": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 248001958,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 1248031205
+          },
+          "sampled_peak_storage_bytes": 1248031205,
+          "net_storage_delta_bytes": 248001958,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "doctor_archive_deep",
+          "seconds": 10.382,
+          "exit_code": 0,
+          "peak_ram_bytes": 16523264,
+          "approximate_read_bytes": 2496132943,
+          "approximate_write_bytes": 459,
+          "input_bytes": 1000029247,
+          "output_bytes": 1000029247,
+          "backup_bytes": 247998922,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 248001958,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 1248031205
+          },
+          "storage_after": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 248001958,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 1248031205
+          },
+          "sampled_peak_storage_bytes": 1248031205,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "compact_dry_run",
+          "seconds": 5.832,
+          "exit_code": 0,
+          "peak_ram_bytes": 18677760,
+          "approximate_read_bytes": 1248102626,
+          "approximate_write_bytes": 615,
+          "input_bytes": 1000029247,
+          "output_bytes": 1000029247,
+          "backup_bytes": 247998922,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 248001958,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 1248031205
+          },
+          "storage_after": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 248001958,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 1248031205
+          },
+          "sampled_peak_storage_bytes": 1248031205,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "compact",
+          "seconds": 7.993,
+          "exit_code": 0,
+          "peak_ram_bytes": 18657280,
+          "approximate_read_bytes": 2525844368,
+          "approximate_write_bytes": 9912442,
+          "input_bytes": 1000029247,
+          "output_bytes": 9904522,
+          "backup_bytes": 247998922,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 248001958,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 1248031205
+          },
+          "storage_after": {
+            "native_bytes": 9904522,
+            "vault_bytes": 248002797,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 257907319
+          },
+          "sampled_peak_storage_bytes": 1257376103,
+          "net_storage_delta_bytes": -990123886,
+          "native_output_ratio": 0.009904232330917018
+        },
+        {
+          "operation": "doctor",
+          "seconds": 0.368,
+          "exit_code": 0,
+          "peak_ram_bytes": 8966144,
+          "approximate_read_bytes": 257981795,
+          "approximate_write_bytes": 571,
+          "input_bytes": 9904522,
+          "output_bytes": 9904522,
+          "backup_bytes": 247998922,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 9904522,
+            "vault_bytes": 248002797,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 257907319
+          },
+          "storage_after": {
+            "native_bytes": 9904522,
+            "vault_bytes": 248002797,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 257907319
+          },
+          "sampled_peak_storage_bytes": 257907319,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "doctor_compacted_deep",
+          "seconds": 2.365,
+          "exit_code": 0,
+          "peak_ram_bytes": 16089088,
+          "approximate_read_bytes": 515829418,
+          "approximate_write_bytes": 459,
+          "input_bytes": 9904522,
+          "output_bytes": 9904522,
+          "backup_bytes": 247998922,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 9904522,
+            "vault_bytes": 248002797,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 257907319
+          },
+          "storage_after": {
+            "native_bytes": 9904522,
+            "vault_bytes": 248002797,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 257907319
+          },
+          "sampled_peak_storage_bytes": 257907319,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "index",
+          "seconds": 3.635,
+          "exit_code": 0,
+          "peak_ram_bytes": 23224320,
+          "approximate_read_bytes": 779996980,
+          "approximate_write_bytes": 8324729,
+          "input_bytes": 9904522,
+          "output_bytes": 9904522,
+          "backup_bytes": 247998922,
+          "index_bytes": 8151040,
+          "storage_before": {
+            "native_bytes": 9904522,
+            "vault_bytes": 248002797,
+            "backup_bytes": 247998922,
+            "index_bytes": 0,
+            "total_bytes": 257907319
+          },
+          "storage_after": {
+            "native_bytes": 9904522,
+            "vault_bytes": 256153837,
+            "backup_bytes": 247998922,
+            "index_bytes": 8151040,
+            "total_bytes": 266058359
+          },
+          "sampled_peak_storage_bytes": 266058359,
+          "net_storage_delta_bytes": 8151040,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "search",
+          "seconds": 0.025,
+          "exit_code": 0,
+          "peak_ram_bytes": 9609216,
+          "approximate_read_bytes": 53396,
+          "approximate_write_bytes": 379,
+          "input_bytes": 9904522,
+          "output_bytes": 9904522,
+          "backup_bytes": 247998922,
+          "index_bytes": 8151040,
+          "storage_before": {
+            "native_bytes": 9904522,
+            "vault_bytes": 256153837,
+            "backup_bytes": 247998922,
+            "index_bytes": 8151040,
+            "total_bytes": 266058359
+          },
+          "storage_after": {
+            "native_bytes": 9904522,
+            "vault_bytes": 256153837,
+            "backup_bytes": 247998922,
+            "index_bytes": 8151040,
+            "total_bytes": 266058359
+          },
+          "sampled_peak_storage_bytes": 266058359,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "read",
+          "seconds": 0.269,
+          "exit_code": 0,
+          "peak_ram_bytes": 9760768,
+          "approximate_read_bytes": 248052318,
+          "approximate_write_bytes": 1080,
+          "input_bytes": 9904522,
+          "output_bytes": 9904522,
+          "backup_bytes": 247998922,
+          "index_bytes": 8151040,
+          "storage_before": {
+            "native_bytes": 9904522,
+            "vault_bytes": 256153837,
+            "backup_bytes": 247998922,
+            "index_bytes": 8151040,
+            "total_bytes": 266058359
+          },
+          "storage_after": {
+            "native_bytes": 9904522,
+            "vault_bytes": 256153837,
+            "backup_bytes": 247998922,
+            "index_bytes": 8151040,
+            "total_bytes": 266058359
+          },
+          "sampled_peak_storage_bytes": 266058359,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "restore",
+          "seconds": 21.143,
+          "exit_code": 0,
+          "peak_ram_bytes": 16879616,
+          "approximate_read_bytes": 3520821036,
+          "approximate_write_bytes": 1002497749,
+          "input_bytes": 9904522,
+          "output_bytes": 1000029247,
+          "backup_bytes": 250456493,
+          "index_bytes": 8151040,
+          "storage_before": {
+            "native_bytes": 9904522,
+            "vault_bytes": 256153837,
+            "backup_bytes": 247998922,
+            "index_bytes": 8151040,
+            "total_bytes": 266058359
+          },
+          "storage_after": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 258613356,
+            "backup_bytes": 250456493,
+            "index_bytes": 8151040,
+            "total_bytes": 1258642603
+          },
+          "sampled_peak_storage_bytes": 1268545177,
+          "net_storage_delta_bytes": 992584244,
+          "native_output_ratio": 100.96693681936392
+        },
+        {
+          "operation": "doctor_final_deep",
+          "seconds": 7.49,
+          "exit_code": 0,
+          "peak_ram_bytes": 16646144,
+          "approximate_read_bytes": 2501087583,
+          "approximate_write_bytes": 459,
+          "input_bytes": 1000029247,
+          "output_bytes": 1000029247,
+          "backup_bytes": 250456493,
+          "index_bytes": 8151040,
+          "storage_before": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 258613356,
+            "backup_bytes": 250456493,
+            "index_bytes": 8151040,
+            "total_bytes": 1258642603
+          },
+          "storage_after": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 258613356,
+            "backup_bytes": 250456493,
+            "index_bytes": 8151040,
+            "total_bytes": 1258642603
+          },
+          "sampled_peak_storage_bytes": 1258642603,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "index_restored",
+          "seconds": 11.752,
+          "exit_code": 0,
+          "peak_ram_bytes": 21446656,
+          "approximate_read_bytes": 3296707122,
+          "approximate_write_bytes": 4122618,
+          "input_bytes": 1000029247,
+          "output_bytes": 1000029247,
+          "backup_bytes": 250456493,
+          "index_bytes": 11603968,
+          "storage_before": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 258613356,
+            "backup_bytes": 250456493,
+            "index_bytes": 8151040,
+            "total_bytes": 1258642603
+          },
+          "storage_after": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 262066284,
+            "backup_bytes": 250456493,
+            "index_bytes": 11603968,
+            "total_bytes": 1262095531
+          },
+          "sampled_peak_storage_bytes": 1262095531,
+          "net_storage_delta_bytes": 3452928,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "read_restored",
+          "seconds": 0.62,
+          "exit_code": 0,
+          "peak_ram_bytes": 9785344,
+          "approximate_read_bytes": 248154719,
+          "approximate_write_bytes": 1420,
+          "input_bytes": 1000029247,
+          "output_bytes": 1000029247,
+          "backup_bytes": 250456493,
+          "index_bytes": 11603968,
+          "storage_before": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 262066284,
+            "backup_bytes": 250456493,
+            "index_bytes": 11603968,
+            "total_bytes": 1262095531
+          },
+          "storage_after": {
+            "native_bytes": 1000029247,
+            "vault_bytes": 262066284,
+            "backup_bytes": 250456493,
+            "index_bytes": 11603968,
+            "total_bytes": 1262095531
+          },
+          "sampled_peak_storage_bytes": 1262095531,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        }
+      ],
+      "passed": true,
+      "restored_sha256": "43f14977bf8a16793659be53378f3b318082d8f7c5a0df4066ff8b34c14fb79b",
+      "compact_storage": {
+        "native_bytes": 9904522,
+        "vault_bytes": 248002797,
+        "backup_bytes": 247998922,
+        "index_bytes": 0,
+        "total_bytes": 257907319
+      },
+      "backup_compression_ratio": 0.24799166898765712,
+      "net_saved_bytes": 742121928,
+      "net_saved_percent": 74.21002237947548,
+      "indexed_storage": {
+        "native_bytes": 9904522,
+        "vault_bytes": 256153837,
+        "backup_bytes": 247998922,
+        "index_bytes": 8151040,
+        "total_bytes": 266058359
+      },
+      "net_saved_after_index_bytes": 733970888,
+      "net_saved_after_index_percent": 73.39494221812495
+    },
+    {
+      "requested_gb": 5.0,
+      "generated": {
+        "bytes": 5000118203,
+        "records": 256069,
+        "turns": 32008,
+        "checkpoints": 3,
+        "sha256": "119e729a0628d32526457da57615a353e69f2594003442e43a1f2805a7b945c8"
+      },
+      "operations": [
+        {
+          "operation": "scan",
+          "seconds": 0.233,
+          "exit_code": 0,
+          "peak_ram_bytes": 8548352,
+          "approximate_read_bytes": 98305,
+          "approximate_write_bytes": 899,
+          "input_bytes": 5000118203,
+          "output_bytes": 5000118203,
+          "backup_bytes": 0,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 5000118203
+          },
+          "storage_after": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 5000118203
+          },
+          "sampled_peak_storage_bytes": 5000118203,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "analyze",
+          "seconds": 41.716,
+          "exit_code": 0,
+          "peak_ram_bytes": 26828800,
+          "approximate_read_bytes": 5000118203,
+          "approximate_write_bytes": 785,
+          "input_bytes": 5000118203,
+          "output_bytes": 5000118203,
+          "backup_bytes": 0,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 5000118203
+          },
+          "storage_after": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 5000118203
+          },
+          "sampled_peak_storage_bytes": 5000118203,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "archive",
+          "seconds": 88.841,
+          "exit_code": 0,
+          "peak_ram_bytes": 12296192,
+          "approximate_read_bytes": 12480551271,
+          "approximate_write_bytes": 1240112081,
+          "input_bytes": 5000118203,
+          "output_bytes": 5000118203,
+          "backup_bytes": 1240108280,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 5000118203
+          },
+          "storage_after": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1240111310,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 6240229513
+          },
+          "sampled_peak_storage_bytes": 6240229513,
+          "net_storage_delta_bytes": 1240111310,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "doctor_archive_deep",
+          "seconds": 64.976,
+          "exit_code": 0,
+          "peak_ram_bytes": 16486400,
+          "approximate_read_bytes": 12480564045,
+          "approximate_write_bytes": 459,
+          "input_bytes": 5000118203,
+          "output_bytes": 5000118203,
+          "backup_bytes": 1240108280,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1240111310,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 6240229513
+          },
+          "storage_after": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1240111310,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 6240229513
+          },
+          "sampled_peak_storage_bytes": 6240229513,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "compact_dry_run",
+          "seconds": 78.483,
+          "exit_code": 0,
+          "peak_ram_bytes": 27029504,
+          "approximate_read_bytes": 6240335271,
+          "approximate_write_bytes": 617,
+          "input_bytes": 5000118203,
+          "output_bytes": 5000118203,
+          "backup_bytes": 1240108280,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1240111310,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 6240229513
+          },
+          "storage_after": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1240111310,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 6240229513
+          },
+          "sampled_peak_storage_bytes": 6240229513,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "compact",
+          "seconds": 166.754,
+          "exit_code": 0,
+          "peak_ram_bytes": 27009024,
+          "approximate_read_bytes": 12630524863,
+          "approximate_write_bytes": 49995645,
+          "input_bytes": 5000118203,
+          "output_bytes": 49987703,
+          "backup_bytes": 1240108280,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1240111310,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 6240229513
+          },
+          "storage_after": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1240112160,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 1290099863
+          },
+          "sampled_peak_storage_bytes": 6290217799,
+          "net_storage_delta_bytes": -4950129650,
+          "native_output_ratio": 0.009997304257728965
+        },
+        {
+          "operation": "doctor",
+          "seconds": 6.875,
+          "exit_code": 0,
+          "peak_ram_bytes": 8949760,
+          "approximate_read_bytes": 1290236598,
+          "approximate_write_bytes": 571,
+          "input_bytes": 49987703,
+          "output_bytes": 49987703,
+          "backup_bytes": 1240108280,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1240112160,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 1290099863
+          },
+          "storage_after": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1240112160,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 1290099863
+          },
+          "sampled_peak_storage_bytes": 1290099863,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "doctor_compacted_deep",
+          "seconds": 31.715,
+          "exit_code": 0,
+          "peak_ram_bytes": 16113664,
+          "approximate_read_bytes": 2580327639,
+          "approximate_write_bytes": 459,
+          "input_bytes": 49987703,
+          "output_bytes": 49987703,
+          "backup_bytes": 1240108280,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1240112160,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 1290099863
+          },
+          "storage_after": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1240112160,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 1290099863
+          },
+          "sampled_peak_storage_bytes": 1290099863,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "index",
+          "seconds": 47.257,
+          "exit_code": 0,
+          "peak_ram_bytes": 25157632,
+          "approximate_read_bytes": 4021034870,
+          "approximate_write_bytes": 158168700,
+          "input_bytes": 49987703,
+          "output_bytes": 49987703,
+          "backup_bytes": 1240108280,
+          "index_bytes": 41353216,
+          "storage_before": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1240112160,
+            "backup_bytes": 1240108280,
+            "index_bytes": 0,
+            "total_bytes": 1290099863
+          },
+          "storage_after": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1281465376,
+            "backup_bytes": 1240108280,
+            "index_bytes": 41353216,
+            "total_bytes": 1331453079
+          },
+          "sampled_peak_storage_bytes": 1331453079,
+          "net_storage_delta_bytes": 41353216,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "search",
+          "seconds": 0.035,
+          "exit_code": 0,
+          "peak_ram_bytes": 9752576,
+          "approximate_read_bytes": 211583,
+          "approximate_write_bytes": 379,
+          "input_bytes": 49987703,
+          "output_bytes": 49987703,
+          "backup_bytes": 1240108280,
+          "index_bytes": 41353216,
+          "storage_before": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1281465376,
+            "backup_bytes": 1240108280,
+            "index_bytes": 41353216,
+            "total_bytes": 1331453079
+          },
+          "storage_after": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1281465376,
+            "backup_bytes": 1240108280,
+            "index_bytes": 41353216,
+            "total_bytes": 1331453079
+          },
+          "sampled_peak_storage_bytes": 1331453079,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "read",
+          "seconds": 1.634,
+          "exit_code": 0,
+          "peak_ram_bytes": 9760768,
+          "approximate_read_bytes": 1240169868,
+          "approximate_write_bytes": 1080,
+          "input_bytes": 49987703,
+          "output_bytes": 49987703,
+          "backup_bytes": 1240108280,
+          "index_bytes": 41353216,
+          "storage_before": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1281465376,
+            "backup_bytes": 1240108280,
+            "index_bytes": 41353216,
+            "total_bytes": 1331453079
+          },
+          "storage_after": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1281465376,
+            "backup_bytes": 1240108280,
+            "index_bytes": 41353216,
+            "total_bytes": 1331453079
+          },
+          "sampled_peak_storage_bytes": 1331453079,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "restore",
+          "seconds": 171.193,
+          "exit_code": 0,
+          "peak_ram_bytes": 16855040,
+          "approximate_read_bytes": 17605356596,
+          "approximate_write_bytes": 5012528524,
+          "input_bytes": 49987703,
+          "output_bytes": 5000118203,
+          "backup_bytes": 1252507655,
+          "index_bytes": 41353216,
+          "storage_before": {
+            "native_bytes": 49987703,
+            "vault_bytes": 1281465376,
+            "backup_bytes": 1240108280,
+            "index_bytes": 41353216,
+            "total_bytes": 1331453079
+          },
+          "storage_after": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1293866699,
+            "backup_bytes": 1252507655,
+            "index_bytes": 41353216,
+            "total_bytes": 6293984902
+          },
+          "sampled_peak_storage_bytes": 6343974497,
+          "net_storage_delta_bytes": 4962531823,
+          "native_output_ratio": 100.02696469169628
+        },
+        {
+          "operation": "doctor_final_deep",
+          "seconds": 86.676,
+          "exit_code": 0,
+          "peak_ram_bytes": 16568320,
+          "approximate_read_bytes": 12505390853,
+          "approximate_write_bytes": 459,
+          "input_bytes": 5000118203,
+          "output_bytes": 5000118203,
+          "backup_bytes": 1252507655,
+          "index_bytes": 41353216,
+          "storage_before": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1293866699,
+            "backup_bytes": 1252507655,
+            "index_bytes": 41353216,
+            "total_bytes": 6293984902
+          },
+          "storage_after": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1293866699,
+            "backup_bytes": 1252507655,
+            "index_bytes": 41353216,
+            "total_bytes": 6293984902
+          },
+          "sampled_peak_storage_bytes": 6293984902,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "index_restored",
+          "seconds": 108.001,
+          "exit_code": 0,
+          "peak_ram_bytes": 22241280,
+          "approximate_read_bytes": 16670450291,
+          "approximate_write_bytes": 21176589,
+          "input_bytes": 5000118203,
+          "output_bytes": 5000118203,
+          "backup_bytes": 1252507655,
+          "index_bytes": 59408384,
+          "storage_before": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1293866699,
+            "backup_bytes": 1252507655,
+            "index_bytes": 41353216,
+            "total_bytes": 6293984902
+          },
+          "storage_after": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1311921867,
+            "backup_bytes": 1252507655,
+            "index_bytes": 59408384,
+            "total_bytes": 6312040070
+          },
+          "sampled_peak_storage_bytes": 6313555782,
+          "net_storage_delta_bytes": 18055168,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "read_restored",
+          "seconds": 3.433,
+          "exit_code": 0,
+          "peak_ram_bytes": 9822208,
+          "approximate_read_bytes": 1240290976,
+          "approximate_write_bytes": 1420,
+          "input_bytes": 5000118203,
+          "output_bytes": 5000118203,
+          "backup_bytes": 1252507655,
+          "index_bytes": 59408384,
+          "storage_before": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1311921867,
+            "backup_bytes": 1252507655,
+            "index_bytes": 59408384,
+            "total_bytes": 6312040070
+          },
+          "storage_after": {
+            "native_bytes": 5000118203,
+            "vault_bytes": 1311921867,
+            "backup_bytes": 1252507655,
+            "index_bytes": 59408384,
+            "total_bytes": 6312040070
+          },
+          "sampled_peak_storage_bytes": 6312040070,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        }
+      ],
+      "passed": true,
+      "restored_sha256": "119e729a0628d32526457da57615a353e69f2594003442e43a1f2805a7b945c8",
+      "compact_storage": {
+        "native_bytes": 49987703,
+        "vault_bytes": 1240112160,
+        "backup_bytes": 1240108280,
+        "index_bytes": 0,
+        "total_bytes": 1290099863
+      },
+      "backup_compression_ratio": 0.24801579275784974,
+      "net_saved_bytes": 3710018340,
+      "net_saved_percent": 74.1986127002766,
+      "indexed_storage": {
+        "native_bytes": 49987703,
+        "vault_bytes": 1281465376,
+        "backup_bytes": 1240108280,
+        "index_bytes": 41353216,
+        "total_bytes": 1331453079
+      },
+      "net_saved_after_index_bytes": 3668665124,
+      "net_saved_after_index_percent": 73.37156793211115
+    },
+    {
+      "requested_gb": 10.0,
+      "generated": {
+        "bytes": 10000067180,
+        "records": 512237,
+        "turns": 64029,
+        "checkpoints": 3,
+        "sha256": "3a992201640fecad3d87c5553944b050cc646cb88829c7a39e2789079083af3f"
+      },
+      "operations": [
+        {
+          "operation": "scan",
+          "seconds": 0.103,
+          "exit_code": 0,
+          "peak_ram_bytes": 8519680,
+          "approximate_read_bytes": 121108,
+          "approximate_write_bytes": 901,
+          "input_bytes": 10000067180,
+          "output_bytes": 10000067180,
+          "backup_bytes": 0,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 10000067180
+          },
+          "storage_after": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 10000067180
+          },
+          "sampled_peak_storage_bytes": 10000067180,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "analyze",
+          "seconds": 90.318,
+          "exit_code": 0,
+          "peak_ram_bytes": 26509312,
+          "approximate_read_bytes": 10000067180,
+          "approximate_write_bytes": 787,
+          "input_bytes": 10000067180,
+          "output_bytes": 10000067180,
+          "backup_bytes": 0,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 10000067180
+          },
+          "storage_after": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 10000067180
+          },
+          "sampled_peak_storage_bytes": 10000067180,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "archive",
+          "seconds": 190.828,
+          "exit_code": 0,
+          "peak_ram_bytes": 12242944,
+          "approximate_read_bytes": 24960495040,
+          "approximate_write_bytes": 2480123233,
+          "input_bytes": 10000067180,
+          "output_bytes": 10000067180,
+          "backup_bytes": 2480119427,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 0,
+            "backup_bytes": 0,
+            "index_bytes": 0,
+            "total_bytes": 10000067180
+          },
+          "storage_after": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2480122461,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 12480189641
+          },
+          "sampled_peak_storage_bytes": 12480189641,
+          "net_storage_delta_bytes": 2480122461,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "doctor_archive_deep",
+          "seconds": 132.239,
+          "exit_code": 0,
+          "peak_ram_bytes": 16465920,
+          "approximate_read_bytes": 24960487747,
+          "approximate_write_bytes": 459,
+          "input_bytes": 10000067180,
+          "output_bytes": 10000067180,
+          "backup_bytes": 2480119427,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2480122461,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 12480189641
+          },
+          "storage_after": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2480122461,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 12480189641
+          },
+          "sampled_peak_storage_bytes": 12480189641,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "compact_dry_run",
+          "seconds": 105.94,
+          "exit_code": 0,
+          "peak_ram_bytes": 27095040,
+          "approximate_read_bytes": 12480298845,
+          "approximate_write_bytes": 618,
+          "input_bytes": 10000067180,
+          "output_bytes": 10000067180,
+          "backup_bytes": 2480119427,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2480122461,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 12480189641
+          },
+          "storage_after": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2480122461,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 12480189641
+          },
+          "sampled_peak_storage_bytes": 12480189641,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "compact",
+          "seconds": 158.41,
+          "exit_code": 0,
+          "peak_ram_bytes": 27156480,
+          "approximate_read_bytes": 25260513997,
+          "approximate_write_bytes": 100005686,
+          "input_bytes": 10000067180,
+          "output_bytes": 99997727,
+          "backup_bytes": 2480119427,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2480122461,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 12480189641
+          },
+          "storage_after": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2480123313,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 2580121040
+          },
+          "sampled_peak_storage_bytes": 12580187372,
+          "net_storage_delta_bytes": -9900068601,
+          "native_output_ratio": 0.009999705521978304
+        },
+        {
+          "operation": "doctor",
+          "seconds": 11.638,
+          "exit_code": 0,
+          "peak_ram_bytes": 8945664,
+          "approximate_read_bytes": 2580268631,
+          "approximate_write_bytes": 571,
+          "input_bytes": 99997727,
+          "output_bytes": 99997727,
+          "backup_bytes": 2480119427,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2480123313,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 2580121040
+          },
+          "storage_after": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2480123313,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 2580121040
+          },
+          "sampled_peak_storage_bytes": 2580121040,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "doctor_compacted_deep",
+          "seconds": 43.973,
+          "exit_code": 0,
+          "peak_ram_bytes": 16220160,
+          "approximate_read_bytes": 5160378244,
+          "approximate_write_bytes": 459,
+          "input_bytes": 99997727,
+          "output_bytes": 99997727,
+          "backup_bytes": 2480119427,
+          "index_bytes": 0,
+          "storage_before": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2480123313,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 2580121040
+          },
+          "storage_after": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2480123313,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 2580121040
+          },
+          "sampled_peak_storage_bytes": 2580121040,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "index",
+          "seconds": 90.363,
+          "exit_code": 0,
+          "peak_ram_bytes": 25952256,
+          "approximate_read_bytes": 8209300304,
+          "approximate_write_bytes": 477312638,
+          "input_bytes": 99997727,
+          "output_bytes": 99997727,
+          "backup_bytes": 2480119427,
+          "index_bytes": 82874368,
+          "storage_before": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2480123313,
+            "backup_bytes": 2480119427,
+            "index_bytes": 0,
+            "total_bytes": 2580121040
+          },
+          "storage_after": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2562997681,
+            "backup_bytes": 2480119427,
+            "index_bytes": 82874368,
+            "total_bytes": 2662995408
+          },
+          "sampled_peak_storage_bytes": 2662995408,
+          "net_storage_delta_bytes": 82874368,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "search",
+          "seconds": 0.052,
+          "exit_code": 0,
+          "peak_ram_bytes": 9732096,
+          "approximate_read_bytes": 223930,
+          "approximate_write_bytes": 379,
+          "input_bytes": 99997727,
+          "output_bytes": 99997727,
+          "backup_bytes": 2480119427,
+          "index_bytes": 82874368,
+          "storage_before": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2562997681,
+            "backup_bytes": 2480119427,
+            "index_bytes": 82874368,
+            "total_bytes": 2662995408
+          },
+          "storage_after": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2562997681,
+            "backup_bytes": 2480119427,
+            "index_bytes": 82874368,
+            "total_bytes": 2662995408
+          },
+          "sampled_peak_storage_bytes": 2662995408,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "read",
+          "seconds": 9.849,
+          "exit_code": 0,
+          "peak_ram_bytes": 9822208,
+          "approximate_read_bytes": 2480185111,
+          "approximate_write_bytes": 1080,
+          "input_bytes": 99997727,
+          "output_bytes": 99997727,
+          "backup_bytes": 2480119427,
+          "index_bytes": 82874368,
+          "storage_before": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2562997681,
+            "backup_bytes": 2480119427,
+            "index_bytes": 82874368,
+            "total_bytes": 2662995408
+          },
+          "storage_after": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2562997681,
+            "backup_bytes": 2480119427,
+            "index_bytes": 82874368,
+            "total_bytes": 2662995408
+          },
+          "sampled_peak_storage_bytes": 2662995408,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "restore",
+          "seconds": 346.935,
+          "exit_code": 0,
+          "peak_ram_bytes": 16715776,
+          "approximate_read_bytes": 35210195287,
+          "approximate_write_bytes": 10024891528,
+          "input_bytes": 99997727,
+          "output_bytes": 10000067180,
+          "backup_bytes": 2504932817,
+          "index_bytes": 82874368,
+          "storage_before": {
+            "native_bytes": 99997727,
+            "vault_bytes": 2562997681,
+            "backup_bytes": 2480119427,
+            "index_bytes": 82874368,
+            "total_bytes": 2662995408
+          },
+          "storage_after": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2587813019,
+            "backup_bytes": 2504932817,
+            "index_bytes": 82874368,
+            "total_bytes": 12587880199
+          },
+          "sampled_peak_storage_bytes": 12687876738,
+          "net_storage_delta_bytes": 9924884791,
+          "native_output_ratio": 100.00294486693683
+        },
+        {
+          "operation": "doctor_final_deep",
+          "seconds": 157.081,
+          "exit_code": 0,
+          "peak_ram_bytes": 15732736,
+          "approximate_read_bytes": 25010147394,
+          "approximate_write_bytes": 459,
+          "input_bytes": 10000067180,
+          "output_bytes": 10000067180,
+          "backup_bytes": 2504932817,
+          "index_bytes": 82874368,
+          "storage_before": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2587813019,
+            "backup_bytes": 2504932817,
+            "index_bytes": 82874368,
+            "total_bytes": 12587880199
+          },
+          "storage_after": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2587813019,
+            "backup_bytes": 2504932817,
+            "index_bytes": 82874368,
+            "total_bytes": 12587880199
+          },
+          "sampled_peak_storage_bytes": 12587880199,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "index_restored",
+          "seconds": 183.784,
+          "exit_code": 0,
+          "peak_ram_bytes": 22585344,
+          "approximate_read_bytes": 33509380193,
+          "approximate_write_bytes": 48512587,
+          "input_bytes": 10000067180,
+          "output_bytes": 10000067180,
+          "backup_bytes": 2504932817,
+          "index_bytes": 118697984,
+          "storage_before": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2587813019,
+            "backup_bytes": 2504932817,
+            "index_bytes": 82874368,
+            "total_bytes": 12587880199
+          },
+          "storage_after": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2623636635,
+            "backup_bytes": 2504932817,
+            "index_bytes": 118697984,
+            "total_bytes": 12623703815
+          },
+          "sampled_peak_storage_bytes": 12625784407,
+          "net_storage_delta_bytes": 35823616,
+          "native_output_ratio": 1.0
+        },
+        {
+          "operation": "read_restored",
+          "seconds": 8.601,
+          "exit_code": 0,
+          "peak_ram_bytes": 9801728,
+          "approximate_read_bytes": 2480278971,
+          "approximate_write_bytes": 1420,
+          "input_bytes": 10000067180,
+          "output_bytes": 10000067180,
+          "backup_bytes": 2504932817,
+          "index_bytes": 118697984,
+          "storage_before": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2623636635,
+            "backup_bytes": 2504932817,
+            "index_bytes": 118697984,
+            "total_bytes": 12623703815
+          },
+          "storage_after": {
+            "native_bytes": 10000067180,
+            "vault_bytes": 2623636635,
+            "backup_bytes": 2504932817,
+            "index_bytes": 118697984,
+            "total_bytes": 12623703815
+          },
+          "sampled_peak_storage_bytes": 12623703815,
+          "net_storage_delta_bytes": 0,
+          "native_output_ratio": 1.0
+        }
+      ],
+      "passed": true,
+      "restored_sha256": "3a992201640fecad3d87c5553944b050cc646cb88829c7a39e2789079083af3f",
+      "compact_storage": {
+        "native_bytes": 99997727,
+        "vault_bytes": 2480123313,
+        "backup_bytes": 2480119427,
+        "index_bytes": 0,
+        "total_bytes": 2580121040
+      },
+      "backup_compression_ratio": 0.24801027656696203,
+      "net_saved_bytes": 7419946140,
+      "net_saved_percent": 74.19896293136703,
+      "indexed_storage": {
+        "native_bytes": 99997727,
+        "vault_bytes": 2562997681,
+        "backup_bytes": 2480119427,
+        "index_bytes": 82874368,
+        "total_bytes": 2662995408
+      },
+      "net_saved_after_index_bytes": 7337071772,
+      "net_saved_after_index_percent": 73.37022481882967
+    }
+  ],
+  "complete": true,
+  "requested_sizes_gb": [
+    1,
+    5,
+    10
+  ],
+  "date": "2026-09-06"
+}

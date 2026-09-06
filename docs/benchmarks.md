@@ -6,6 +6,31 @@ These checks use the public Windows **v0.2.1** executable. Synthetic stress test
 scale; private real conversations check compatibility and recovery. Their savings are
 different measurements and should not be used interchangeably.
 
+## Results: 1, 5 and 10 GB
+
+Measured on 2026-09-06: Windows 11 Pro, build 26200 (kernel 10.0), Intel Core i5-1135G7,
+4 cores / 8 logical processors, 11.75 GiB of OS-visible physical memory, NTFS system volume.
+All byte-based table units below are decimal. Each size was run once.
+
+| Input | Peak CLI RAM, all operations | Compact | Restore | Net saved, with backups + index | Exact restore / final deep doctor |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 1 GB | 23.2 MB | 7.99 s | 21.14 s | 73.39% | Passed |
+| 5 GB | 27.0 MB | 166.75 s | 171.19 s | 73.37% | Passed |
+| 10 GB | 27.2 MB | 158.41 s | 346.94 s | 73.37% | Passed |
+
+Every size completed all 15 measured operations, including archive/deep verification,
+compaction, exact restore, index, search and verified reads before and after restoration.
+Peak memory stayed below 28 MB in this workload; doubling input from 5 to 10 GB changed
+the observed maximum from 27.0 to 27.2 MB. This demonstrates bounded memory for these
+inputs, not a guarantee for every record size or future format.
+
+The timing variation, including the faster 10 GB compaction than 5 GB compaction, is from
+this single ordinary-desktop run with an OS-managed cache. It should not be read as a
+comparative throughput result. The 20 GB option is implemented but was not run locally.
+
+[Full per-operation table](validation/stress-windows-0.2.1.md) ·
+[JSON: bytes, RAM, I/O, storage and SHA-256 checks](validation/stress-windows-0.2.1.json)
+
 ## Reproduce the multi-GB test
 
 Use Windows and Python 3.11 or later. The harness has no third-party Python dependencies.
@@ -59,8 +84,9 @@ estimate for arbitrary or incompressible conversations.
   every 200 ms and may miss a short-lived peak. Logs and generated reports are excluded.
 - Commands run sequentially with one Vault worker on an ordinary desktop, with an
   OS-managed cache and no cache flush. This is a local measurement, not a throughput SLA.
-- The reported net saving is measured immediately after compaction, including all retained
-  backups and journal metadata. Indexing happens afterward and has its own recorded cost.
+- Headline net savings compare the original transcript with the compacted transcript plus
+  all retained backups, journal metadata and the first search index. The JSON also preserves
+  the compaction-only saving and per-operation storage, including later restore snapshots.
 
 ## Five representative real rollouts
 
@@ -98,7 +124,8 @@ The 278.40 MB real copy then survived archive, deep archive verification, compac
 verification, indexing, search, verified read, exact restore, final deep doctor and reindex.
 Its original source stayed unchanged. Native size after compaction was **3.11 MB**, while
 the transcript plus retained backup and metadata occupied **117.05 MB**: **57.96% net saved**.
-The search index subsequently occupied 0.93 MB. This is one real example, not a corpus average.
+The search index subsequently occupied 0.93 MB, bringing the total to **117.98 MB** and the
+net saving to **57.62% including the index**. This is one real example, not a corpus average.
 
 [Machine-readable release results](validation/windows-release-0.2.1.json)
 

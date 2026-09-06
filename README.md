@@ -74,6 +74,25 @@ A smaller rollout does **not** always mean less disk usage: retained backups cos
 `compact --dry-run` estimates the net change; completed operations include backups and metadata
 in their storage report and warn when total usage increases.
 
+## Tested locally
+
+The public **v0.2.1 Windows ZIP** completed the full archive → compact → restore → search
+sequence on generated 1, 5 and 10 GB rollouts:
+
+| Synthetic input | Peak CLI RAM | Net space saved* | Exact SHA-256 restore |
+| --- | ---: | ---: | --- |
+| 1 GB | 23.2 MB | 73.39% | Passed |
+| 5 GB | 27.0 MB | 73.37% | Passed |
+| 10 GB | 27.2 MB | 73.37% | Passed |
+
+*Includes the compacted transcript, retained backups, journal and search index. This is a
+compressible synthetic workload, not a savings forecast. Decimal GB/MB; one local Windows run.*
+
+Five representative real rollouts also passed their expected compaction/refusal checks with
+Codex as the reconstruction oracle for allowed cases. One **278.40 MB real copy used 117.98 MB
+after compaction and indexing — 57.62% net saved** — and restored exactly. The ZIP was installed
+and exercised locally through the user PATH. [Results, methodology and limits](docs/benchmarks.md).
+
 ## Safety model
 
 Vault verifies backups before replacement, records recovery references in a journal and checks

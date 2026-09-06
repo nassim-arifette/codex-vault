@@ -19,5 +19,7 @@
   "authenticode_status": "NotSigned",
   "smartscreen": "Command-line install/start succeeded; interactive browser download/SmartScreen flow was not exercised.",
   "portable_pe_import_check_passed": true,
-  "test_date": "2026-09-06"
+  "test_date": "2026-09-06",
+  "total_bytes_after_compact_and_index": 117978950,
+  "net_saved_after_index_percent": 57.62253875428717
 }
