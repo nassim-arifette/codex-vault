@@ -1,11 +1,13 @@
 [
   {
     "name": "large-multi-checkpoint",
+    "expected": "COMPACT_ALLOWED",
     "session_id": "REPLACE_WITH_SESSION_ID",
     "path": "C:/path/to/rollout.jsonl"
   },
   {
     "name": "small-without-checkpoint",
+    "expected": "ARCHIVE_ONLY",
     "session_id": "REPLACE_WITH_ANOTHER_SESSION_ID",
     "path": "C:/path/to/another-rollout.jsonl"
   }

@@ -9,7 +9,8 @@ The harness compares what Codex reconstructs from the original and compacted tra
 GitHub Actions runs formatting, Clippy and synthetic unit/integration tests on Windows and Linux.
 Windows compatibility jobs generate synthetic conversations and run the differential harness
 against pinned Codex versions 0.152.1 and 0.153.4, checking two resumed turns and the read-only
-MCP tool catalog. No real conversation is required by CI. Codex downloads are checked against
+MCP tool catalog. They also replay a long archive/append/compact/restore/recompact lifecycle.
+No real conversation is required by CI. Codex downloads are checked against
 the official release asset SHA-256. The standard test suite does not make model API calls.
 
 To reproduce the synthetic matrix on Windows:
@@ -80,13 +81,38 @@ The mock answers with a minimal but *valid* `response.created` / `response.outpu
 first), or from a JSON file named by `CODEX_VAULT_DIFF_CASES` / `differential-cases.json`:
 
 ```json
-[{ "name": "nominal-large", "session_id": "01a0…", "path": "C:/…/rollout-….jsonl" }]
+[{ "name": "private-case-1", "session_id": "REPLACE_WITH_SESSION_ID", "path": "C:/private/rollout.jsonl", "expected": "COMPACT_ALLOWED" }]
 ```
 
 Copy `differential-cases.example.json` to `differential-cases.json` and replace the placeholders
 with your own session IDs and paths. Real conversations, local case lists, validation logs,
 recovery files, and `AGENTS.md` / `CLAUDE.md` are excluded from Git. The example contains no
 conversation data.
+
+Declare `expected` for a reproducible corpus: `COMPACT_ALLOWED`, `COMPACT_REFUSED`,
+`ARCHIVE_ONLY` or `READ_ONLY`. A changed classification fails the test. Legacy case lists
+without this field still work, but do not freeze the expected behavior. Protected threads
+are tested through the refusal test; only allowed threads are resumed by Codex.
+
+`test-differential.ps1` writes a timestamped private log and an anonymous JSONL result file.
+When calling Cargo directly, set `CODEX_VAULT_DIFF_REPORT` to a **new** output filename.
+Each case records its ordinal alias, expected/observed classification, byte counts and pass
+status. Reconstruction results must have two resumed turns per arm and a smaller output.
+A missing record, `passed: false`, or nonzero test exit is a failed/incomplete validation.
+Reports append so a failure preserves earlier results; use a fresh path for every run.
+Raw logs and captured requests can contain private data and must never be published.
+
+## Long lifecycle regression
+
+`tests/common/mod.rs` supplies the same scenario to the ordinary CLI test and the ignored
+Codex differential test. It appends turns, writes native checkpoints, archives, grows,
+compacts, grows again, indexes and reads historical text, restores an older state, restores
+the pre-restore state, compacts again, then rebuilds the index.
+
+At each journal stage it checks that the original anchor and backup bytes remain unchanged,
+history retains its exact previous prefix, every backup is listed and reachable, and deep
+doctor succeeds. Every distinct recorded state is restored and SHA-256 checked. The final
+Codex comparison checks both resumed turns against the final pre-compaction state.
 
 Only **user** threads are usable. Codex refuses to resume a spawned one — *"cannot resume an
 unloaded multi-agent v2 sub-agent through its parent"*. `scan` reports `thread_source` and

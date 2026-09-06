@@ -5,6 +5,19 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use tempfile::TempDir;
+mod common;
+
+#[test]
+fn long_lifecycle_keeps_every_recovery_generation_reachable_and_exact() {
+    let sb = CliSandbox::new();
+    common::seed(&sb.session, "cli-test", &sb.dir.path().join("project"));
+    common::lifecycle(
+        &sb.session,
+        &sb.dir.path().join("codex"),
+        &sb.dir.path().join("vault"),
+        &sb.dir.path().join("project"),
+    );
+}
 
 struct CliSandbox {
     dir: TempDir,

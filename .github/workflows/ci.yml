@@ -61,8 +61,16 @@ jobs:
           "CODEX_VAULT_DIFF_CASES=$cases" >> $env:GITHUB_ENV
           "CODEX_VAULT_CODEX_BIN=$binary" >> $env:GITHUB_ENV
           "CODEX_HOME=$env:RUNNER_TEMP/synthetic-codex-home" >> $env:GITHUB_ENV
+          "CODEX_VAULT_DIFF_REPORT=$env:GITHUB_WORKSPACE/validation/synthetic/differential-results.jsonl" >> $env:GITHUB_ENV
       - name: Compare two resumptions and discover the Vault MCP tools
         run: cargo +stable test --locked --test differential -- --ignored --nocapture --test-threads=1
+      - name: Keep anonymous synthetic case results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: differential-${{ matrix.codex }}
+          path: validation/synthetic/differential-results.jsonl
+          if-no-files-found: warn
 
   clean-install:
     name: Clean Windows installation

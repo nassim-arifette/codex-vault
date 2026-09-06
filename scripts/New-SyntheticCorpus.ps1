@@ -34,7 +34,7 @@ foreach ($caseNumber in 1..4) {
     $path = Join-Path $corpusRoot $name
     $lines = @($records | ForEach-Object { ConvertTo-Json -InputObject $_ -Depth 20 -Compress })
     [IO.File]::WriteAllText($path, ($lines -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
-    $fixtureCases += @{name=('synthetic-case-' + $caseNumber); session_id=$sessionId; path=$path}
+    $fixtureCases += @{name=('synthetic-case-' + $caseNumber); session_id=$sessionId; path=$path; expected=$(if ($caseNumber -eq 4) {'ARCHIVE_ONLY'} else {'COMPACT_ALLOWED'})}
 }
 $casePath = Join-Path $corpusRoot 'cases.json'
 [IO.File]::WriteAllText($casePath, (ConvertTo-Json -InputObject $fixtureCases -Depth 5), [Text.UTF8Encoding]::new($false))

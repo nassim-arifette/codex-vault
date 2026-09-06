@@ -36,6 +36,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
+mod common;
 
 /// How long a single `codex exec resume` may take. Large transcripts are slow to replay.
 const CODEX_TIMEOUT: Duration = Duration::from_secs(300);
@@ -431,7 +432,7 @@ fn compare_requests(a: &Value, b: &Value) -> Result<usize, String> {
 fn truncate(v: &Value) -> String {
     let s = v.to_string();
     if s.len() > 400 {
-        format!("{}…", &s[..400])
+        format!("{}…", s.chars().take(400).collect::<String>())
     } else {
         s
     }
@@ -450,6 +451,60 @@ struct Case {
     session_meta_index: Option<usize>,
     refusal: Option<String>,
     project: Option<String>,
+    expected: Option<String>,
+}
+
+impl Case {
+    fn classification(&self) -> &'static str {
+        if self.can_compact {
+            "COMPACT_ALLOWED"
+        } else if self.refusal.as_deref() == Some("codex_managed_zstd") {
+            "READ_ONLY"
+        } else if self.refusal.is_some() {
+            "COMPACT_REFUSED"
+        } else {
+            "ARCHIVE_ONLY"
+        }
+    }
+}
+
+/// Append one anonymous JSON record even when an assertion unwinds. A missing/pass=false
+/// record or nonzero test exit is a failure; never publish captured requests or raw errors.
+struct CaseReport(Value);
+impl CaseReport {
+    fn start(case: &Case, test: &str) -> Self {
+        let ordinal = discover_cases()
+            .iter()
+            .position(|c| c.path == case.path)
+            .unwrap()
+            + 1;
+        Self(
+            json!({"schema_version":1,"case":format!("R{ordinal:02}"),"test":test,
+            "expected":case.expected.as_deref().unwrap_or(case.classification()),
+            "observed":case.classification(),"refusal_code":case.refusal,
+            "input_bytes":case.size,"passed":false}),
+        )
+    }
+    fn check_expected(&self) {
+        assert_eq!(
+            self.0["expected"], self.0["observed"],
+            "fixture classification changed"
+        );
+    }
+}
+impl Drop for CaseReport {
+    fn drop(&mut self) {
+        if let Ok(path) = std::env::var("CODEX_VAULT_DIFF_REPORT") {
+            static LOCK: Mutex<()> = Mutex::new(());
+            let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let mut file = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .expect("open differential JSONL report");
+            writeln!(file, "{}", self.0).expect("write differential report");
+        }
+    }
 }
 
 /// Fixtures per category. Kept small so the harness stays runnable, not so small that a category
@@ -563,6 +618,7 @@ fn discover_cases_uncached() -> Vec<Case> {
                     session_meta_index: analysis.session_meta_index,
                     refusal: refusal_for(&info.path, &analysis),
                     project: info.cwd_hint.clone(),
+                    expected: None,
                 });
             }
         }
@@ -597,6 +653,11 @@ fn load_cases(file: &Path) -> Vec<Case> {
                 session_meta_index: analysis.session_meta_index,
                 refusal,
                 project: read_session_head(&path).expect("fixture metadata").cwd_hint,
+                expected: e.get("expected").map(|v| {
+                    v.as_str()
+                        .expect("expected classification string")
+                        .to_owned()
+                }),
                 path,
             }
         })
@@ -795,6 +856,9 @@ fn reconstruction_is_identical_after_compaction() {
 
     let mut failures = Vec::new();
     for case in &cases {
+        let mut report = CaseReport::start(case, "reconstruction");
+        report.check_expected();
+        let failures_before = failures.len();
         println!(
             "--- {} ({:.2} MB, session {})",
             case.name,
@@ -848,6 +912,9 @@ fn reconstruction_is_identical_after_compaction() {
             ),
             Err(diff) => failures.push(format!("{}: {diff}", case.name)),
         }
+        report.0["output_bytes"] = json!(size_after);
+        report.0["resumed_turns_per_arm"] = json!(2);
+        report.0["passed"] = json!(failures.len() == failures_before);
     }
 
     assert!(
@@ -873,6 +940,8 @@ fn the_harness_detects_an_over_compaction() {
         .into_iter()
         .find(|c| c.can_compact && c.cutoff_index.is_some())
         .expect("no compactable session found");
+    let mut report = CaseReport::start(&case, "negative_control");
+    report.check_expected();
 
     println!("--- negative control on {}", case.session_id);
     let sandbox = DiffSandbox::new(&case.path, &case.session_id).expect("sandbox");
@@ -898,6 +967,7 @@ fn the_harness_detects_an_over_compaction() {
             diff.lines().next().unwrap_or("")
         ),
     }
+    report.0["passed"] = json!(true);
 }
 
 /// Write `src` to `dst` keeping only the session_meta line and everything from `cutoff` on.
@@ -929,6 +999,8 @@ fn a_refused_session_is_left_byte_identical() {
     );
 
     for case in &cases {
+        let mut report = CaseReport::start(case, "refusal");
+        report.check_expected();
         let sandbox = DiffSandbox::new(&case.path, &case.session_id).expect("sandbox");
         let original = fs::read(&sandbox.session_path).expect("read");
 
@@ -961,5 +1033,38 @@ fn a_refused_session_is_left_byte_identical() {
             case.name,
             case.refusal.as_deref().unwrap_or("archived_only")
         );
+        report.0["byte_identical"] = json!(true);
+        report.0["passed"] = json!(true);
     }
+}
+
+#[test]
+#[ignore = "needs the codex CLI; uses a synthetic lifecycle"]
+fn reconstruction_is_identical_after_long_lifecycle() {
+    require_codex();
+    let fixture = TempDir::new().unwrap();
+    let id = "11111111-1111-4111-8111-000000000099";
+    let source = fixture
+        .path()
+        .join(format!("rollout-2026-01-01T00-00-00-{id}.jsonl"));
+    common::seed(&source, id, fixture.path());
+    let sandbox = DiffSandbox::new(&source, id).unwrap();
+    common::seed(&sandbox.session_path, id, &sandbox.cwd());
+    let baseline = common::lifecycle(
+        &sandbox.session_path,
+        &sandbox.codex_home(),
+        &sandbox.vault_home(),
+        &sandbox.cwd(),
+    );
+    let compacted = fs::read(&sandbox.session_path).unwrap();
+    fs::write(&source, &baseline).unwrap();
+    sandbox.restore_from(&source).unwrap();
+    let before = capture_reconstruction(&sandbox).unwrap();
+    let before_second = capture_reconstruction(&sandbox).unwrap();
+    fs::write(&source, compacted).unwrap();
+    sandbox.restore_from(&source).unwrap();
+    let after = capture_reconstruction(&sandbox).unwrap();
+    let after_second = capture_reconstruction(&sandbox).unwrap();
+    compare_requests(&before, &after).unwrap();
+    compare_requests(&before_second, &after_second).unwrap();
 }
