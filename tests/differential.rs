@@ -358,6 +358,192 @@ fn capture_reconstruction(sandbox: &DiffSandbox) -> Result<Value, String> {
     serde_json::from_slice(&body).map_err(|e| format!("captured body is not JSON: {e}"))
 }
 
+/// Rollout tags reviewed against the bounded reconstruction model. Compatibility validation
+/// fails if a pinned Codex writer emits a tag outside these lists.
+const REVIEWED_OUTER_TYPES: &[&str] = &[
+    "compacted",
+    "event_msg",
+    "inter_agent_communication",
+    "inter_agent_communication_metadata",
+    "realtime_item",
+    "response_item",
+    "retained_context",
+    "security_risk_score",
+    "session_compacted",
+    "session_meta",
+    "token_usage_record",
+    "turn_context",
+    "world_state",
+];
+
+const REVIEWED_EVENT_TYPES: &[&str] = &[
+    "agent_message",
+    "agent_reasoning",
+    "context_compacted",
+    "item_completed",
+    "mcp_tool_call_end",
+    "patch_apply_end",
+    "sub_agent_activity",
+    "task_aborted",
+    "task_complete",
+    "task_started",
+    "thread_goal_updated",
+    "thread_rollback",
+    "thread_rolled_back",
+    "thread_settings_applied",
+    "token_count",
+    "turn_aborted",
+    "turn_complete",
+    "turn_started",
+    "user_message",
+    "web_search_end",
+];
+
+const REVIEWED_RESPONSE_ITEM_TYPES: &[&str] = &[
+    "agent_message",
+    "custom_tool_call",
+    "custom_tool_call_output",
+    "function_call",
+    "function_call_output",
+    "message",
+    "reasoning",
+];
+
+const REVIEWED_WRITER_VERSIONS: &[&str] = &["0.150.0", "0.151.0", "0.152.1", "0.153.4"];
+
+type WriterTypeInventory = (String, BTreeSet<String>, BTreeSet<String>, BTreeSet<String>);
+
+fn wait_for_codex(mut child: std::process::Child, operation: &str) -> Result<String, String> {
+    let deadline = std::time::Instant::now() + CODEX_TIMEOUT;
+    let mut stderr_pipe = child.stderr.take().expect("piped stderr");
+    let stderr_reader = thread::spawn(move || {
+        let mut text = String::new();
+        let _ = stderr_pipe.read_to_string(&mut text);
+        text
+    });
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() > deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "codex {operation} did not finish within {CODEX_TIMEOUT:?}"
+                ));
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(100)),
+            Err(e) => return Err(format!("waiting for codex {operation}: {e}")),
+        }
+    };
+    let stderr = stderr_reader.join().unwrap_or_default();
+    if !status.success() {
+        return Err(format!(
+            "codex {operation} exited with {status}: {}",
+            stderr.trim()
+        ));
+    }
+    Ok(stderr)
+}
+
+fn fresh_writer_type_inventory() -> Result<WriterTypeInventory, String> {
+    let codex = resolve_codex_binary().ok_or("codex executable not found")?;
+    let sandbox = TempDir::new().map_err(|e| format!("fresh writer sandbox: {e}"))?;
+    let codex_home = sandbox.path().join("codex");
+    fs::create_dir_all(&codex_home).map_err(|e| format!("fresh writer CODEX_HOME: {e}"))?;
+    let server = CaptureServer::start().map_err(|e| format!("capture server: {e}"))?;
+    let provider = format!(
+        "model_providers.mock={{name=\"mock\",base_url=\"{}\",wire_api=\"responses\",env_key=\"OPENAI_API_KEY\"}}",
+        server.base_url()
+    );
+    let mut command = Command::new(&codex);
+    command
+        .arg("exec")
+        .arg("compatibility format probe")
+        .arg("--skip-git-repo-check")
+        .arg("--ignore-user-config")
+        .args(["-c", "model_provider=mock"])
+        .args(["-c", &provider])
+        .env("CODEX_HOME", &codex_home)
+        .env("OPENAI_API_KEY", "differential-harness-mock")
+        .current_dir(sandbox.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let child = command
+        .spawn()
+        .map_err(|e| format!("spawning fresh codex session: {e}"))?;
+    let stderr = wait_for_codex(child, "fresh format probe")?;
+    if server.first_body().is_none() {
+        return Err(format!(
+            "fresh codex session sent no model request; stderr: {}",
+            stderr.trim()
+        ));
+    }
+
+    let sessions = codex_home.join("sessions");
+    let rollouts: Vec<_> = walkdir::WalkDir::new(&sessions)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry.file_type().is_file()
+                && entry
+                    .path()
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("rollout-") && name.ends_with(".jsonl"))
+        })
+        .collect();
+    if rollouts.len() != 1 {
+        return Err(format!(
+            "fresh Codex format probe expected exactly one rollout under {}, found {}",
+            sessions.display(),
+            rollouts.len()
+        ));
+    }
+    let rollout = &rollouts[0];
+    let writer_version = read_session_head(rollout.path())
+        .map_err(|e| format!("read fresh rollout metadata: {e}"))?
+        .provenance
+        .cli_version
+        .ok_or("fresh Codex rollout did not record payload.cli_version")?;
+
+    let mut outer = BTreeSet::new();
+    let mut events = BTreeSet::new();
+    let mut response_items = BTreeSet::new();
+    let input = fs::File::open(rollout.path()).map_err(|e| format!("open fresh rollout: {e}"))?;
+    for line in BufReader::new(input).lines() {
+        let line = line.map_err(|e| format!("read fresh rollout: {e}"))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: Value = serde_json::from_str(&line)
+            .map_err(|e| format!("fresh rollout contains malformed JSON: {e}"))?;
+        let outer_type = value.get("type").and_then(Value::as_str).unwrap_or("");
+        outer.insert(outer_type.to_string());
+        let payload = value.get("payload").unwrap_or(&value);
+        if outer_type == "event_msg" {
+            events.insert(
+                payload
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+            );
+        } else if outer_type == "response_item" {
+            let item = payload
+                .get("item")
+                .filter(|item| item.is_object())
+                .unwrap_or(payload);
+            response_items.insert(
+                item.get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+            );
+        }
+    }
+    Ok((writer_version, outer, events, response_items))
+}
+
 // =============================================================================== comparison
 
 fn strip_item_fields(item: &Value) -> Value {
@@ -453,6 +639,9 @@ struct Case {
     refusal: Option<String>,
     project: Option<String>,
     expected: Option<String>,
+    fixture_codex_version: Option<String>,
+    unknown_record_count: usize,
+    unknown_record_types: Vec<String>,
 }
 
 impl Case {
@@ -480,10 +669,14 @@ impl CaseReport {
             .unwrap()
             + 1;
         Self(
-            json!({"schema_version":1,"case":format!("R{ordinal:02}"),"test":test,
+            json!({"schema_version":2,"case":format!("R{ordinal:02}"),"test":test,
             "expected":case.expected.as_deref().unwrap_or(case.classification()),
             "observed":case.classification(),"refusal_code":case.refusal,
-            "input_bytes":case.size,"passed":false}),
+            "input_bytes":case.size,"passed":false,
+            "codex_oracle_version":codex_oracle_version(),
+            "fixture_codex_version":case.fixture_codex_version.as_deref(),
+            "unknown_record_count":case.unknown_record_count,
+            "unknown_record_types":&case.unknown_record_types}),
         )
     }
     fn check_expected(&self) {
@@ -620,6 +813,12 @@ fn discover_cases_uncached() -> Vec<Case> {
                     refusal: refusal_for(&info.path, &analysis),
                     project: info.cwd_hint.clone(),
                     expected: None,
+                    fixture_codex_version: read_session_head(&info.path)
+                        .expect("fixture metadata")
+                        .provenance
+                        .cli_version,
+                    unknown_record_count: analysis.unknown_record_count,
+                    unknown_record_types: analysis.unknown_record_types.clone(),
                 });
             }
         }
@@ -638,6 +837,7 @@ fn load_cases(file: &Path) -> Vec<Case> {
             let analysis = analyze_session(&path)
                 .unwrap_or_else(|e| panic!("cannot analyze fixture {}: {e}", path.display()));
             let refusal = refusal_for(&path, &analysis);
+            let head = read_session_head(&path).expect("fixture metadata");
             Case {
                 name: e
                     .get("name")
@@ -653,12 +853,15 @@ fn load_cases(file: &Path) -> Vec<Case> {
                 cutoff_index: analysis.cutoff_index,
                 session_meta_index: analysis.session_meta_index,
                 refusal,
-                project: read_session_head(&path).expect("fixture metadata").cwd_hint,
+                project: head.cwd_hint,
                 expected: e.get("expected").map(|v| {
                     v.as_str()
                         .expect("expected classification string")
                         .to_owned()
                 }),
+                fixture_codex_version: head.provenance.cli_version,
+                unknown_record_count: analysis.unknown_record_count,
+                unknown_record_types: analysis.unknown_record_types,
                 path,
             }
         })
@@ -686,6 +889,79 @@ fn describe(cases: &[Case]) -> String {
 
 fn require_codex() -> Option<PathBuf> {
     Some(resolve_codex_binary().expect("no codex executable: install Codex or set CODEX_VAULT_CODEX_BIN; differential validation has NOT run"))
+}
+
+fn codex_oracle_version() -> &'static str {
+    static VERSION: OnceLock<String> = OnceLock::new();
+    VERSION
+        .get_or_init(|| {
+            let codex = require_codex().expect("Codex binary");
+            let output = Command::new(codex)
+                .arg("--version")
+                .output()
+                .expect("query Codex version");
+            assert!(output.status.success(), "Codex --version failed");
+            let text = String::from_utf8(output.stdout)
+                .expect("Codex --version must be UTF-8")
+                .trim()
+                .to_string();
+            text.split_whitespace()
+                .last()
+                .filter(|part| !part.is_empty())
+                .unwrap_or(&text)
+                .to_string()
+        })
+        .as_str()
+}
+
+#[test]
+#[ignore = "requires a Codex binary"]
+fn codex_writer_emits_only_reviewed_rollout_types() {
+    require_codex();
+    let (writer_version, outer, events, response_items) =
+        fresh_writer_type_inventory().expect("inspect a rollout freshly written by Codex");
+    assert_eq!(
+        writer_version,
+        codex_oracle_version(),
+        "fresh rollout provenance must identify the pinned Codex writer"
+    );
+    assert!(
+        REVIEWED_WRITER_VERSIONS.contains(&writer_version.as_str()),
+        "Codex {writer_version} has not been explicitly reviewed for this compatibility matrix"
+    );
+    let reviewed_outer: BTreeSet<String> = REVIEWED_OUTER_TYPES
+        .iter()
+        .map(|tag| (*tag).to_string())
+        .collect();
+    let reviewed_events: BTreeSet<String> = REVIEWED_EVENT_TYPES
+        .iter()
+        .map(|tag| (*tag).to_string())
+        .collect();
+    let reviewed_response: BTreeSet<String> = REVIEWED_RESPONSE_ITEM_TYPES
+        .iter()
+        .map(|tag| (*tag).to_string())
+        .collect();
+    let unknown_outer: Vec<_> = outer.difference(&reviewed_outer).cloned().collect();
+    let unknown_events: Vec<_> = events.difference(&reviewed_events).cloned().collect();
+    let unknown_response: Vec<_> = response_items
+        .difference(&reviewed_response)
+        .cloned()
+        .collect();
+    assert!(
+        unknown_outer.is_empty() && unknown_events.is_empty() && unknown_response.is_empty(),
+        "Codex emitted unreviewed rollout types; inspect reconstruction semantics before extending compatibility. outer={unknown_outer:?}, event_msg={unknown_events:?}, response_item={unknown_response:?}"
+    );
+    assert!(
+        outer.contains("session_meta"),
+        "fresh rollout must contain session_meta"
+    );
+    assert!(
+        outer.contains("event_msg"),
+        "fresh rollout must contain event_msg"
+    );
+    eprintln!(
+        "fresh writer type audit PASS: Codex {writer_version}; outer={outer:?}; event_msg={events:?}; response_item={response_items:?}"
+    );
 }
 
 #[test]

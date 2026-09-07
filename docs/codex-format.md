@@ -57,7 +57,7 @@ Codex must rematerialize a native JSONL before Vault can modify it.
 
 ## Transcript compatibility limitation
 
-The code mirrors the current bounded-scan rules structurally, but it is not linked against Codex's private Rust types and the transcript format is not a stable public API. Before using `compact` on irreplaceable sessions, test `analyze`, `archive`, `doctor`, and `restore` on copies of several real rollouts from your installed Codex version.
+The code mirrors the current bounded-scan rules structurally, but it is not linked against Codex's private Rust types and the transcript format is not a stable public API. Before using `compact` on irreplaceable sessions, test `analyze`, `archive`, `doctor`, and `restore` on copies of several real rollouts from your installed Codex version. The [compatibility matrix](compatibility.md) lists the Codex reconstruction oracles that have passed the full evidence policy; parser compilation alone is never treated as compatibility proof.
 
 Each manifest pins the Codex build the transcript came from, read out of its own `session_meta`
 (`cli_version`, alongside `originator`, `source`, `history_mode` and the context window id).

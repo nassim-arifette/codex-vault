@@ -8,8 +8,10 @@ The harness compares what Codex reconstructs from the original and compacted tra
 
 GitHub Actions runs formatting, Clippy and synthetic unit/integration tests on Windows and Linux.
 Windows compatibility jobs generate synthetic conversations and run the differential harness
-against pinned Codex versions 0.152.1 and 0.153.4, checking two resumed turns and the read-only
-MCP tool catalog. They also replay a long archive/append/compact/restore/recompact lifecycle.
+against pinned Codex versions 0.150.0, 0.151.0, 0.152.1 and 0.153.4, checking two resumed turns and
+the read-only MCP tool catalog. Every pinned binary also writes a brand-new rollout against the
+local mock provider; the harness verifies the writer `cli_version` and refuses unreviewed outer,
+event or response-item types. The jobs also replay a long archive/append/compact/restore/recompact lifecycle.
 No real conversation is required by CI. Codex downloads are checked against
 the official release asset SHA-256. The standard test suite does not make model API calls.
 
@@ -24,7 +26,9 @@ $env:CODEX_VAULT_CODEX_BIN = .\scripts\Get-TestCodex.ps1 -Version 0.153.4
 The version downloader uses an authenticated GitHub CLI (`gh`). Compatibility applies to the
 tested cases and does not establish safety for every future Codex format. Release tags publish
 a Windows ZIP only after checks, compatibility tests and a fresh-runner installation smoke test
-pass. This is a preview release. The project is licensed under [MIT](../LICENSE).
+pass. The evidence policy and current statuses are in the
+[Codex compatibility matrix](compatibility.md). This is a preview release. The project is licensed
+under [MIT](../LICENSE).
 
 ## The differential reconstruction harness
 
@@ -96,8 +100,11 @@ are tested through the refusal test; only allowed threads are resumed by Codex.
 
 `test-differential.ps1` writes a timestamped private log and an anonymous JSONL result file.
 When calling Cargo directly, set `CODEX_VAULT_DIFF_REPORT` to a **new** output filename.
-Each case records its ordinal alias, expected/observed classification, byte counts and pass
-status. Reconstruction results must have two resumed turns per arm and a smaller output.
+Each case records its ordinal alias, expected/observed classification, byte counts, pinned
+`codex_oracle_version`, the fixture's own `fixture_codex_version`, unknown top-level rollout types
+seen by Vault's analysis, and pass status. Reconstruction results must have two resumed turns per
+arm and a smaller output. Oracle and fixture versions are intentionally separate: the public
+synthetic corpus is not relabeled to pretend it was written by each tested Codex release.
 A missing record, `passed: false`, or nonzero test exit is a failed/incomplete validation.
 Reports append so a failure preserves earlier results; use a fresh path for every run.
 Raw logs and captured requests can contain private data and must never be published.
@@ -140,10 +147,11 @@ remain local and are excluded from Git.
 
 ## What is still not covered
 
-The harness has a bounded scope: two pinned Codex versions and two consecutive resumed turns per compacted synthetic session
-are checked in CI. This does not cover every transcript variant or future Codex release.
-Codex-managed `.jsonl.zst` sessions remain read-only. Long-running live workloads and more Codex
-versions remain useful additions to the compatibility matrix.
+The harness has a bounded scope: four pinned Codex versions and two consecutive resumed turns per
+compacted synthetic session are checked in CI, together with a fresh-writer type audit. This does
+not cover every transcript variant or future Codex release. Codex-managed `.jsonl.zst` sessions
+remain read-only. Long-running live workloads and future stable Codex versions remain useful
+additions to the compatibility matrix.
 
 The Windows rename behavior is documented by Microsoft in
 [the references in the safety model](safety-model.md#boundaries).

@@ -111,6 +111,9 @@ copy of a real rollout. `scripts/benchmark.py` generates and verifies 1/5/10 GB 
 For a release, update the Cargo version and lockfile, review `RELEASE_NOTES.md`, and push the
 tested changes. A matching `vVERSION` tag triggers CI; publication requires Windows/Linux checks,
 the pinned Codex differential matrix and fresh-runner installation on both platforms to pass.
+`python scripts/test-compatibility-matrix.py` additionally rejects a documented `tested` Codex
+version without synthetic, representative-real, fresh-writer type-audit and refusal evidence, or
+when the documentation and CI version lists drift apart.
 The release includes a Windows ZIP, a static Linux x86_64 tarball and one `SHA256SUMS.txt` covering
 both archives. Release artifacts include only explicitly selected public files.
 

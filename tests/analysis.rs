@@ -175,6 +175,8 @@ fn unknown_outer_rollout_type_disables_compaction() {
     let file = write_fixture(&lines);
     let analysis = analyze_session(file.path()).unwrap();
     assert!(!analysis.can_compact);
+    assert_eq!(analysis.unknown_record_count, 1);
+    assert_eq!(analysis.unknown_record_types, ["future_semantic_record"]);
     assert!(analysis
         .reasons
         .iter()

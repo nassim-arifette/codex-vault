@@ -150,6 +150,13 @@ negative savings mean total storage increased. Already compacted files return `a
 without rewriting the transcript or its restore target. See the
 [storage accounting rules](safety-model.md#storage-accounting).
 
+When `index.sqlite` already exists and an operation changes a native rollout or adds an
+index-visible recovery source, Vault reports `Search index may be stale` and
+`Run: codex-vault index`. This is a hint only: archive/compact/restore never run indexing
+automatically. Dry runs, already-compact no-ops, an existing archive with no new snapshot, and
+restores whose requested bytes already match do not emit the stale hint. JSON exposes the same
+signal under `search_index`; the index remains derived/rebuildable rather than canonical.
+
 `compact-conversation` is the conversation-level command for Codex pagination. A thread ID,
 `codex://threads/THREAD_ID` reference, or path to one page resolves the complete discovered chain.
 The dry run reports every affected page, the predecessor prefix each successor consumes, native

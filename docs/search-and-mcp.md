@@ -16,6 +16,11 @@ codex-vault index --rebuild
 
 Run `index` again after conversations change, or after compacting/restoring. It reuses unchanged
 sources, updates changed sources transactionally, and removes references to deleted sources.
+When an index already exists, commands that change a native rollout or add an index-visible
+recovery source report `Search index may be stale` and the explicit refresh command. The JSON
+result exposes the same state under `search_index`.
+These hints never run indexing automatically: the SQLite database remains derived, rebuildable and
+non-canonical, and `read` still verifies a backing source hash before returning exact text.
 Busy native transcripts are deferred, retaining their previous indexed snapshot. A full rebuild
 requires readable sources and atomically replaces the derived database only after success.
 `--rebuild` covers the entire corpus and cannot be combined with `--cwd`.

@@ -415,15 +415,28 @@ fn cli_short_commands_roundtrip_and_integrity_exit_codes() {
         CliSandbox::value(&scan)["sessions"][0]["title"],
         "Test conversation"
     );
+    sb.ok(&["index"]);
     let compact = sb.run(&["--json", "compact", "cli-test"], None);
     assert!(
         compact.status.success(),
         "{}",
         String::from_utf8_lossy(&compact.stderr)
     );
+    let compact_value = CliSandbox::value(&compact);
+    assert_eq!(compact_value["search_index"]["may_be_stale"], true);
+    assert_eq!(
+        compact_value["search_index"]["refresh_command"],
+        "codex-vault index"
+    );
+    assert_eq!(compact_value["search_index"]["rebuildable"], true);
+    assert_eq!(compact_value["search_index"]["canonical"], false);
     assert!(fs::metadata(&sb.session).unwrap().len() < original.len() as u64);
     let restored = sb.run(&["--json", "restore", "cli-test", "--original"], None);
     assert!(restored.status.success());
+    assert_eq!(
+        CliSandbox::value(&restored)["search_index"]["may_be_stale"],
+        true
+    );
     assert_eq!(fs::read(&sb.session).unwrap(), original);
     let backup = PathBuf::from(CliSandbox::value(&compact)["backup"].as_str().unwrap());
     fs::write(backup, b"damaged archive").unwrap();
@@ -433,6 +446,60 @@ fn cli_short_commands_roundtrip_and_integrity_exit_codes() {
     assert_eq!(fs::read(&sb.session).unwrap(), original);
     let doctor = sb.run(&["--json", "doctor", "cli-test"], None);
     assert_eq!(doctor.status.code(), Some(4));
+}
+
+#[test]
+fn stale_index_hints_only_follow_relevant_source_changes() {
+    let no_index = CliSandbox::new();
+    let archive_without_index = no_index.ok(&["archive", "cli-test"]);
+    assert!(archive_without_index.get("search_index").is_none());
+    assert!(!no_index.dir.path().join("vault/index.sqlite").exists());
+
+    let sb = CliSandbox::new();
+    sb.ok(&["index"]);
+    let index_path = sb.dir.path().join("vault/index.sqlite");
+    let index_before = fs::read(&index_path).unwrap();
+
+    let preview = sb.ok(&["compact", "cli-test", "--dry-run"]);
+    assert!(preview.get("search_index").is_none());
+
+    let archived = sb.ok(&["archive", "cli-test"]);
+    assert_eq!(archived["search_index"]["may_be_stale"], true);
+    let existing = sb.ok(&["archive", "cli-test"]);
+    assert_eq!(existing["status"], "exists");
+    assert!(existing.get("search_index").is_none());
+    let listed = sb.ok(&["restore", "cli-test", "--list"]);
+    assert!(listed.get("search_index").is_none());
+
+    let human = sb.run(&["--human", "archive", "cli-test", "--force"], None);
+    assert!(human.status.success());
+    let human = String::from_utf8(human.stdout).unwrap();
+    assert!(human.contains("Search index may be stale."));
+    assert!(human.contains("Run: codex-vault index"));
+
+    let compacted = sb.ok(&["compact", "cli-test"]);
+    assert_eq!(compacted["search_index"]["may_be_stale"], true);
+    let no_op = sb.ok(&["compact", "cli-test"]);
+    assert_eq!(no_op["status"], "already_compact");
+    assert!(no_op.get("search_index").is_none());
+
+    let restored = sb.ok(&["restore", "cli-test", "--original"]);
+    assert_eq!(restored["search_index"]["may_be_stale"], true);
+    let already_restored = sb.ok(&["restore", "cli-test", "--original"]);
+    assert!(already_restored["stats"]["pre_restore_backup"].is_null());
+    assert!(already_restored.get("search_index").is_none());
+    assert_eq!(
+        fs::read(&index_path).unwrap(),
+        index_before,
+        "archive/compact/restore hints must never refresh the index automatically"
+    );
+
+    let batch = CliSandbox::new();
+    batch.ok(&["index"]);
+    let changed_batch = batch.ok(&["compact", "--cwd", "C:/sample project"]);
+    assert_eq!(changed_batch["search_index"]["may_be_stale"], true);
+    let no_op_batch = batch.ok(&["compact", "--cwd", "C:/sample project"]);
+    assert!(no_op_batch.get("search_index").is_none());
 }
 
 #[test]
@@ -470,6 +537,9 @@ fn menu_cancellation_and_eof_leave_native_bytes_untouched() {
 fn menu_can_archive_compact_verify_and_restore_selected_session() {
     let sb = CliSandbox::new();
     let before = fs::read(&sb.session).unwrap();
+    sb.ok(&["index"]);
+    let index_path = sb.dir.path().join("vault/index.sqlite");
+    let index_before = fs::read(&index_path).unwrap();
     let result = sb.run(
         &["menu"],
         Some("/sample project\n1\n2\n3\ny\n5\n1\nyes\n4\n0\nq\n"),
@@ -491,6 +561,9 @@ fn menu_can_archive_compact_verify_and_restore_selected_session() {
     assert!(text.contains("Test conversation"));
     assert!(text.contains("Net savings, including backups and metadata:"));
     assert!(text.contains("Restore this conversation? [y/N]"));
+    assert!(text.matches("Search index may be stale.").count() >= 3);
+    assert!(text.matches("Run: codex-vault index").count() >= 3);
+    assert_eq!(fs::read(index_path).unwrap(), index_before);
 }
 
 #[test]
@@ -619,7 +692,10 @@ fn search_survives_compaction_reindex_corruption_rebuild_and_restore() {
     );
     assert_eq!(read["verified_reference"]["line"], 2);
     assert_eq!(fs::read(&sb.session).unwrap(), original);
-    sb.ok(&["compact", "cli-test"]);
+    let compact = sb.ok(&["compact", "cli-test"]);
+    assert_eq!(compact["search_index"]["may_be_stale"], true);
+    let stale_read = sb.run(&["read", id], None);
+    assert_eq!(stale_read.status.code(), Some(4));
     sb.ok(&["index"]);
     let after = sb.ok(&["search", "authentication tokens"]);
     assert_eq!(after["matches"][0]["id"], id);
@@ -638,7 +714,8 @@ fn search_survives_compaction_reindex_corruption_rebuild_and_restore() {
     );
     sb.ok(&["index", "--rebuild"]);
     assert_eq!(sb.ok(&["search", "authentication"])["matches"][0]["id"], id);
-    sb.ok(&["restore", "cli-test", "--original"]);
+    let restore = sb.ok(&["restore", "cli-test", "--original"]);
+    assert_eq!(restore["search_index"]["may_be_stale"], true);
     sb.ok(&["index"]);
     assert_eq!(
         sb.ok(&["search", "authentication"])["matches"]

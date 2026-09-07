@@ -139,9 +139,11 @@ rollouts; `compact-conversation` is the validated path for a complete linear pag
 Unsupported dependency layouts and spawned threads are protected; Codex-managed compressed
 rollouts remain read-only.
 
-CI checks reconstruction with **Codex 0.152.1 and 0.153.4**, plus Windows/Linux tests and installation
-on fresh Windows and Linux runners. This covers the tested cases, not every future Codex format.
-[How recovery works](docs/safety-model.md) · [What the harness proves](docs/differential-testing.md)
+CI checks reconstruction with **Codex 0.150.0, 0.151.0, 0.152.1 and 0.153.4**, plus Windows/Linux
+tests and installation on fresh Windows and Linux runners. Compatibility is evidence-backed per
+version and covers the tested cases, not every future Codex format.
+[Compatibility matrix](docs/compatibility.md) · [How recovery works](docs/safety-model.md) ·
+[What the harness proves](docs/differential-testing.md)
 
 ## Documentation
 
@@ -150,6 +152,7 @@ on fresh Windows and Linux runners. This covers the tested cases, not every futu
 | [CLI](docs/cli.md) | Installation, command examples, scripting and exit codes |
 | [Safety model](docs/safety-model.md) | Backup, locking, replacement and storage guarantees |
 | [Codex format](docs/codex-format.md) | Cutoffs, pagination and compatibility boundaries |
+| [Compatibility matrix](docs/compatibility.md) | Tested Codex versions and the evidence required for each |
 | [Differential testing](docs/differential-testing.md) | Synthetic fixtures, reconstruction oracle and negative control |
 | [Recovery journal](docs/recovery-journal.md) | Archive layout, recorded states and interrupted operations |
 | [Search and MCP](docs/search-and-mcp.md) | Indexing, exact passage references and Codex setup |
@@ -160,7 +163,7 @@ on fresh Windows and Linux runners. This covers the tested cases, not every futu
 
 - **Guided `repair`** for supported damage or interrupted operations, with a reviewable plan and recovery snapshot before changes.
 - Easier index refresh and clearer backup storage management across repeated compactions.
-- More Codex versions, rollout variants and concurrent live-session tests.
+- Keep expanding the tested Codex matrix, rollout variants and concurrent live-session tests.
 - macOS and ARM64 distribution, plus Windows code signing.
 
 These are planned, not shipped features. There is currently **no `repair` command**;

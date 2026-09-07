@@ -1,5 +1,6 @@
 //! Human-facing terminal output and optional menu. All actions use the same CLI core.
 use codex_vault::analysis::analyze_session;
+use codex_vault::commands::{archive_result_value, compact_result_value, restore_result_value};
 use codex_vault::discovery::{
     discover_sessions, lineage_successors, parse_filter, resolve_session_reference,
 };
@@ -49,6 +50,20 @@ fn label(status: &str) -> &str {
         "skipped_spawned_thread" => "Spawned thread retained",
         "read_only_native_zstd" => "Already compressed by Codex (read-only)",
         other => other,
+    }
+}
+
+fn render_index_stale_hint(value: &Value) {
+    if value["search_index"]["may_be_stale"] == true {
+        println!("Search index may be stale.");
+        println!(
+            "Run: {}",
+            clean(
+                value["search_index"]["refresh_command"]
+                    .as_str()
+                    .unwrap_or("codex-vault index")
+            )
+        );
     }
 }
 
@@ -302,6 +317,7 @@ pub fn render(value: &Value) {
         for row in rows {
             render(row);
         }
+        render_index_stale_hint(value);
         return;
     }
     if value.get("file_stem").is_some() {
@@ -403,6 +419,7 @@ pub fn render(value: &Value) {
             );
         }
     }
+    render_index_stale_hint(value);
     if let Some(anchors) = value["anchors"].as_array() {
         for (i, a) in anchors.iter().enumerate() {
             println!(
@@ -455,7 +472,7 @@ fn conversation(path: &Path) -> Result<()> {
         match choice.as_str() {
             "0" | "q" => return Ok(()),
             "1" => show_action(analyze_session(path).map(|a| json!({"analysis": a}))),
-            "2" => show_action(archive_impl(path, true).map(|v| json!(v))),
+            "2" => show_action(archive_impl(path, true).map(archive_result_value)),
             "3" => {
                 let head = read_session_head(path)?;
                 if is_codex_zstd_jsonl(path)
@@ -485,7 +502,7 @@ fn conversation(path: &Path) -> Result<()> {
                 if prompt("Compact this conversation? [y/N] > ")?
                     .is_some_and(|s| s.eq_ignore_ascii_case("y") || s.eq_ignore_ascii_case("yes"))
                 {
-                    show_action(compact_safe_impl(path).map(|v| json!(v)));
+                    show_action(compact_safe_impl(path).map(compact_result_value));
                 }
             }
             "4" => show_action(doctor_one(path, DoctorDepth::Deep).map(|v| json!(v))),
@@ -514,7 +531,8 @@ fn conversation(path: &Path) -> Result<()> {
                         s.eq_ignore_ascii_case("y") || s.eq_ignore_ascii_case("yes")
                     }) {
                         show_action(
-                            restore_impl(path, RestoreTarget::Backup(backup)).map(|v| json!(v)),
+                            restore_impl(path, RestoreTarget::Backup(backup))
+                                .map(restore_result_value),
                         );
                     }
                 } else if input != "0" {

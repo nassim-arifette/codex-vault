@@ -22,6 +22,10 @@ pub struct CompactionAnalysis {
     pub total_lines: usize,
     pub parsed_lines: usize,
     pub malformed_lines: usize,
+    /// Unknown top-level rollout item types are a compatibility boundary: any occurrence keeps
+    /// destructive compaction disabled until the type has been understood and tested.
+    pub unknown_record_count: usize,
+    pub unknown_record_types: Vec<String>,
     pub valid_checkpoint_count: usize,
     pub invalid_checkpoint_count: usize,
     pub replacement_history_items_at_checkpoint: Option<usize>,
@@ -252,6 +256,8 @@ pub fn analyze_scan(scan: MetadataScan) -> CompactionAnalysis {
         && cutoff_index.is_some()
         && cutoff_index != scan.session_meta_index();
 
+    let mut unknown_record_types = scan.unknown.distinct.clone();
+    unknown_record_types.sort();
     CompactionAnalysis {
         can_compact,
         content_sha256: scan.content_sha256.clone(),
@@ -265,6 +271,8 @@ pub fn analyze_scan(scan: MetadataScan) -> CompactionAnalysis {
         total_lines: scan.total_lines,
         parsed_lines: scan.parsed_lines,
         malformed_lines: scan.malformed_lines,
+        unknown_record_count: scan.unknown.count,
+        unknown_record_types,
         valid_checkpoint_count,
         invalid_checkpoint_count,
         replacement_history_items_at_checkpoint: checkpoint_items,

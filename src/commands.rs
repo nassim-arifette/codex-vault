@@ -9,13 +9,80 @@ use crate::discovery::{
 use crate::error::{Result, VaultError};
 use crate::ops::{
     archive_impl, compact_safe_impl_with, doctor_one, list_anchors, prune_one, restore_impl,
-    CompactOptions, DoctorDepth, RestoreTarget,
+    CommandResult, CompactOptions, DoctorDepth, RestoreTarget,
 };
 use crate::parallel::{map_ordered, Progress, ProgressMode};
 use crate::paths::{codex_root, detect_codex_version, vault_root};
 use crate::rollout::is_codex_zstd_jsonl;
 use crate::util::format_size;
 use serde_json::{json, Value};
+
+fn stale_index_hint(reason: &str) -> Value {
+    json!({
+        "may_be_stale": true,
+        "refresh_command": "codex-vault index",
+        "rebuildable": true,
+        "canonical": false,
+        "reason": reason,
+    })
+}
+
+fn add_stale_index_hint(value: &mut Value, reason: &str) {
+    if !crate::index::database_path().is_file() {
+        return;
+    }
+    if let Some(object) = value.as_object_mut() {
+        object.insert("search_index".to_string(), stale_index_hint(reason));
+    }
+}
+
+fn compact_result_may_stale_index(result: &CommandResult) -> bool {
+    match result.status.as_str() {
+        "ok" | "restored_after_failed_verification" => true,
+        "archived_only" => result.stats["recovery_source_created"] == true,
+        _ => false,
+    }
+}
+
+fn restore_result_may_stale_index(result: &CommandResult) -> bool {
+    result.status == "ok" && result.stats["pre_restore_backup"].is_string()
+}
+
+pub fn archive_result_value(result: CommandResult) -> Value {
+    let created_recovery_source = matches!(result.status.as_str(), "ok" | "snapshot_created");
+    let mut value = json!(result);
+    if created_recovery_source {
+        add_stale_index_hint(
+            &mut value,
+            "a verified recovery source was added after the last index refresh",
+        );
+    }
+    value
+}
+
+pub fn compact_result_value(result: CommandResult) -> Value {
+    let may_stale = compact_result_may_stale_index(&result);
+    let mut value = json!(result);
+    if may_stale {
+        add_stale_index_hint(
+            &mut value,
+            "compaction or its recovery capture changed a source represented by the index",
+        );
+    }
+    value
+}
+
+pub fn restore_result_value(result: CommandResult) -> Value {
+    let may_stale = restore_result_may_stale_index(&result);
+    let mut value = json!(result);
+    if may_stale {
+        add_stale_index_hint(
+            &mut value,
+            "restore changed the native rollout and added a pre-restore recovery source",
+        );
+    }
+    value
+}
 
 pub fn scan_command(cwd_filter: Option<String>) -> Result<Value> {
     let filter = parse_filter(cwd_filter)?;
@@ -76,7 +143,7 @@ pub fn analyze_command(
 pub fn archive_command(session: String, cwd_filter: Option<String>, force: bool) -> Result<Value> {
     let filter = parse_filter(cwd_filter)?;
     let path = resolve_session_reference(&session, filter.as_deref())?;
-    Ok(json!(archive_impl(&path, force)?))
+    Ok(archive_result_value(archive_impl(&path, force)?))
 }
 
 /// Shared knobs for the commands that can act on many sessions at once.
@@ -109,7 +176,9 @@ pub fn compact_safe_command(
     let filter = parse_filter(cwd_filter)?;
     if let Some(reference) = session {
         let path = resolve_session_reference(&reference, filter.as_deref())?;
-        return Ok(json!(compact_safe_impl_with(&path, options)?));
+        return Ok(compact_result_value(compact_safe_impl_with(
+            &path, options,
+        )?));
     }
 
     // A destructive batch only ever narrows: the session's own cwd must live inside the filter.
@@ -120,6 +189,7 @@ pub fn compact_safe_command(
     // that a single volume would not deliver anyway.
     let progress = Progress::new("compact-safe", sessions.len(), batch.progress);
     let mut rows = Vec::with_capacity(sessions.len());
+    let mut index_may_be_stale = false;
     for info in sessions {
         if is_codex_zstd_jsonl(&info.path) {
             rows.push(json!({
@@ -146,10 +216,13 @@ pub fn compact_safe_command(
             continue;
         }
         match compact_safe_impl_with(&info.path, options) {
-            Ok(result) => rows.push(json!({
-                "session_id": info.session_id,
-                "result": result,
-            })),
+            Ok(result) => {
+                index_may_be_stale |= compact_result_may_stale_index(&result);
+                rows.push(json!({
+                    "session_id": info.session_id,
+                    "result": result,
+                }))
+            }
             Err(VaultError::LineageSourceRefused { successors, .. }) => rows.push(json!({
                 "session_id": info.session_id,
                 "session": info.path,
@@ -168,7 +241,14 @@ pub fn compact_safe_command(
         }
         progress.item_done(&info.session_id);
     }
-    Ok(json!({"sessions": rows}))
+    let mut value = json!({"sessions": rows});
+    if index_may_be_stale {
+        add_stale_index_hint(
+            &mut value,
+            "one or more batch operations changed sources represented by the index",
+        );
+    }
+    Ok(value)
 }
 
 pub fn compact_conversation_command(
@@ -177,7 +257,14 @@ pub fn compact_conversation_command(
     options: CompactOptions,
 ) -> Result<Value> {
     let filter = parse_filter(cwd_filter)?;
-    compact_conversation(&session, filter.as_deref(), options)
+    let mut value = compact_conversation(&session, filter.as_deref(), options)?;
+    if value["status"] == "ok" {
+        add_stale_index_hint(
+            &mut value,
+            "whole-conversation compaction changed native and recovery sources represented by the index",
+        );
+    }
+    Ok(value)
 }
 
 pub fn restore_command(
@@ -197,12 +284,19 @@ pub fn restore_command(
         (true, None) => RestoreTarget::Original,
         (false, None) => RestoreTarget::Latest,
     };
-    Ok(json!(restore_impl(&path, target)?))
+    Ok(restore_result_value(restore_impl(&path, target)?))
 }
 
 pub fn restore_conversation_command(session: String, cwd_filter: Option<String>) -> Result<Value> {
     let filter = parse_filter(cwd_filter)?;
-    restore_conversation(&session, filter.as_deref())
+    let mut value = restore_conversation(&session, filter.as_deref())?;
+    if value["status"] == "ok" {
+        add_stale_index_hint(
+            &mut value,
+            "whole-conversation restore changed native and recovery sources represented by the index",
+        );
+    }
+    Ok(value)
 }
 
 pub fn doctor_command(

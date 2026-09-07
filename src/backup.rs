@@ -2,10 +2,7 @@
 
 use crate::error::{Result, VaultError};
 use crate::fsatomic::TempFile;
-use crate::hashing::{
-    compress_file_with_input_sha, sha256_file, sha256_zstd_decompressed,
-    sha256_zstd_decompressed_with_size,
-};
+use crate::hashing::{compress_file_with_input_sha, sha256_file, verify_zstd_archive};
 use crate::manifest::{load_manifest, Manifest, RecoveryAnchor};
 use crate::paths::{
     backup_path, precompact_backup_path, snapshot_backup_path, VaultKey, VaultPaths,
@@ -60,7 +57,7 @@ pub fn create_verified_backup_of(
             stage: "backup creation",
         });
     }
-    let decoded_sha = sha256_zstd_decompressed(temp.path())?;
+    let (compressed_sha, decoded_sha, _) = verify_zstd_archive(temp.path())?;
     if decoded_sha != input_sha {
         return Err(VaultError::mismatch(
             "zstd backup does not decode back to the source",
@@ -68,7 +65,6 @@ pub fn create_verified_backup_of(
             decoded_sha,
         ));
     }
-    let compressed_sha = sha256_file(temp.path())?;
     crate::util::test_abort("backup_verified");
     temp.commit_onto(target)?;
     Ok(RecoveryAnchor {
@@ -138,8 +134,7 @@ pub fn ensure_backup_for_compaction(
         }
         create_verified_backup_of(path, &original_backup, Some(current_sha))?
     } else {
-        let (decoded_sha, decoded_size) = sha256_zstd_decompressed_with_size(&original_backup)?;
-        let compressed_sha = sha256_file(&original_backup)?;
+        let (compressed_sha, decoded_sha, decoded_size) = verify_zstd_archive(&original_backup)?;
         if let Some(m) = journal {
             verify_original_against_manifest(m, &decoded_sha, decoded_size, &compressed_sha)?;
         }
@@ -193,12 +188,12 @@ pub fn archive_current_locked(
         ));
     }
 
-    let (decoded_sha, decoded_size) = sha256_zstd_decompressed_with_size(&immutable)?;
+    let (compressed_sha, decoded_sha, decoded_size) = verify_zstd_archive(&immutable)?;
     if current_sha == decoded_sha {
         return Ok((
             RecoveryAnchor {
                 backup_path: immutable.clone(),
-                backup_sha256: sha256_file(&immutable)?,
+                backup_sha256: compressed_sha,
                 source_sha256: decoded_sha,
                 source_size: decoded_size,
             },

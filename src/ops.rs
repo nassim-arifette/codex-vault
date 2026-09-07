@@ -615,7 +615,11 @@ fn compact_locked(
             manifest: Some(manifest_file),
             backup: Some(archived.backup_path),
             reason: analysis.reasons.clone(),
-            stats: json!({"analysis": analysis, "native_transcript_changed": false}),
+            stats: json!({
+                "analysis": analysis,
+                "native_transcript_changed": false,
+                "recovery_source_created": is_new,
+            }),
         });
     }
 

@@ -29,8 +29,9 @@ inputs, not a guarantee for every record size or future format.
 The same 1/5/10 GB run provides the scale baseline for full-text search. `index` is initial
 creation. `index_restored` is an incremental refresh of the existing database after restore;
 that older run changed the native source and added the pre-restore recovery snapshot, so its
-refresh timing is intentionally not presented as a one-source refresh. The schema-v2 harness
-described below now measures a separate one-changed-source refresh as well as a no-op refresh.
+refresh timing is intentionally not presented as a one-source refresh. Schema v3 retains the
+schema-v2 INDEX-002 fields and measures a separate one-changed-source refresh as well as a no-op
+refresh.
 
 | Input | Index create | Index peak RAM | index.sqlite | Post-restore incremental refresh | Refresh peak RAM | Search | Verified read |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -41,7 +42,7 @@ described below now measures a separate one-changed-source refresh as well as a 
 The v0.2.1 report did not yet serialize passage-text bytes or deduplication fields. Because the
 fixture is deterministic and the v0.2.1 index already used the same passage identity and
 occurrence schema, those corpus values can be reconstructed exactly from the recorded turn counts
-and the 99% checkpoint/live-tail boundary. The 0.02 GB schema-v2 smoke test reproduces the same
+and the 99% checkpoint/live-tail boundary. The 0.02 GB schema-v2 smoke test reproduced the same
 calculation exactly (257 passages, 388 occurrences, 13,542 indexed text bytes), and new benchmark
 runs emit these values directly instead of relying on reconstruction. For this fixture, unique
 passages are `1 + 2 × turns`; occurrences are `1 + 3 × turns + 3 × live-tail turns`. The recorded
@@ -100,19 +101,34 @@ is reindexed, and verifies the newly indexed sentinel before the exact-original 
 
 The run exports `report.json`, `report.md` and per-operation metrics under ignored
 `validation/`. Each command records elapsed time, Windows peak working set, native input
-and output sizes, backup/index bytes, logical storage delta, approximate process I/O and
-sampled temporary storage. The case summary includes backup compression ratio and total
+and output sizes, backup/index bytes, logical storage delta, approximate process I/O, normalized
+logical read/write amplification and sampled temporary storage. Amplification divides process I/O
+bytes by the case's **original generated rollout size**, so the denominator remains stable after
+compaction. The case summary includes backup compression ratio and total
 net savings. `--keep-data` retains generated rollouts and backups; otherwise only the
 generator's own marked data trees are removed after successful verification. Failed runs
 retain their data and logs. Never treat an incomplete report as a successful size test.
 
-For INDEX-002, schema-v2 reports also include an `index_scalability` object per size with the
+For INDEX-002, schema-v3 reports retain the `index_scalability` object per size with the
 index creation time and peak RAM, no-op and one-changed-source incremental refresh times, exact
 `index.sqlite` bytes, source/passage/occurrence counts, indexed passage-text bytes, duplicate
 occurrences avoided by passage-body deduplication, deduplication ratio, index/indexed-text ratio,
 search latency, verified-read latency, and the kind of backing source successfully verified.
 The Markdown report renders the same fields as a dedicated FTS table, so the 1/5/10 GB acceptance
 checks do not require reconstructing metrics from the generic operation list.
+
+For PERF-002, schema v3 additionally writes `io_baseline_bytes`,
+`logical_read_amplification` and `logical_write_amplification` on every operation and renders the
+two ratios in the Markdown table. See the [full-file I/O pass model](io-pass-model.md) for the
+source-level pass counts, the historical 1/5/10 GB amplification baseline, and which verification
+passes may or may not be safely merged.
+
+A 0.02 GB release-build schema-v3 smoke run on 2026-09-08 validates the new reporting path and exact
+restore on the current code. In that run, `archive` read `2.248×` the original generated size,
+down from the historical `2.496×` on the same fixture design after merging one redundant compressed
+backup read. This small smoke is a correctness/instrumentation check, not a replacement for the
+1/5/10 GB scale baseline. [Markdown](validation/perf002-smoke-0.2.4.md) ·
+[JSON](validation/perf002-smoke-0.2.4.json)
 
 The disk check reserves 1.4 times the target size plus 2 GB for this generator's compression
 profile. A 20 GB run therefore requires at least 30 GB free. This is not a general capacity
@@ -124,6 +140,9 @@ estimate for arbitrary or incompressible conversations.
   handle. It excludes Python generation, the operating system and unrelated processes.
 - I/O counters measure logical transfers, not physical device traffic. Multiple verification
   passes and the filesystem cache affect both counters and elapsed time.
+- I/O amplification uses the original generated rollout as a stable denominator. It is a
+  full-file-equivalent observation for this fixture, not the number of physical disk passes and
+  not a ratio against the command's possibly already-compacted native input.
 - Input/output byte columns mean the native transcript's size before/after the command.
   Doctor, index and read may also read compressed backups; use the I/O counters for that cost.
 - Storage uses logical file lengths, not NTFS allocation units. Temporary space is sampled

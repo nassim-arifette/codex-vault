@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-08",
+  "vault_version": "0.2.4",
+  "scope": "Codex reconstruction oracle compatibility for the declared corpora; not a blanket promise for every rollout written by that release",
+  "tested_requires": [
+    "synthetic",
+    "representative_real_corpus",
+    "event_type_audit",
+    "refusal_behavior"
+  ],
+  "versions": [
+    {
+      "codex": "0.150.0",
+      "ci": true,
+      "synthetic": {
+        "status": "pass",
+        "cases": 5,
+        "resumed_turns_per_arm": 2,
+        "negative_control": "pass",
+        "long_lifecycle": "pass",
+        "readonly_mcp_discovery": "pass"
+      },
+      "representative_real_corpus": {
+        "status": "pass",
+        "cases": 5,
+        "compact_allowed": 3,
+        "protected": 2,
+        "resumed_turns_per_arm": 2
+      },
+      "event_type_audit": {
+        "status": "pass",
+        "fresh_writer": true,
+        "unknown_outer_types": [],
+        "unknown_event_types": [],
+        "unknown_response_item_types": []
+      },
+      "refusal_behavior": {
+        "status": "pass",
+        "byte_identical": true
+      },
+      "multi_gb": {
+        "status": "not_version_oracled",
+        "note": "The Vault multi-GB benchmark validates scale and integrity but does not invoke a pinned Codex reconstruction oracle."
+      },
+      "status": "tested"
+    },
+    {
+      "codex": "0.151.0",
+      "ci": true,
+      "synthetic": {
+        "status": "pass",
+        "cases": 5,
+        "resumed_turns_per_arm": 2,
+        "negative_control": "pass",
+        "long_lifecycle": "pass",
+        "readonly_mcp_discovery": "pass"
+      },
+      "representative_real_corpus": {
+        "status": "pass",
+        "cases": 5,
+        "compact_allowed": 3,
+        "protected": 2,
+        "resumed_turns_per_arm": 2
+      },
+      "event_type_audit": {
+        "status": "pass",
+        "fresh_writer": true,
+        "unknown_outer_types": [],
+        "unknown_event_types": [],
+        "unknown_response_item_types": []
+      },
+      "refusal_behavior": {
+        "status": "pass",
+        "byte_identical": true
+      },
+      "multi_gb": {
+        "status": "not_version_oracled",
+        "note": "The Vault multi-GB benchmark validates scale and integrity but does not invoke a pinned Codex reconstruction oracle."
+      },
+      "status": "tested"
+    },
+    {
+      "codex": "0.152.1",
+      "ci": true,
+      "synthetic": {
+        "status": "pass",
+        "cases": 5,
+        "resumed_turns_per_arm": 2,
+        "negative_control": "pass",
+        "long_lifecycle": "pass",
+        "readonly_mcp_discovery": "pass"
+      },
+      "representative_real_corpus": {
+        "status": "pass",
+        "cases": 5,
+        "compact_allowed": 3,
+        "protected": 2,
+        "resumed_turns_per_arm": 2
+      },
+      "event_type_audit": {
+        "status": "pass",
+        "fresh_writer": true,
+        "unknown_outer_types": [],
+        "unknown_event_types": [],
+        "unknown_response_item_types": []
+      },
+      "refusal_behavior": {
+        "status": "pass",
+        "byte_identical": true
+      },
+      "multi_gb": {
+        "status": "not_version_oracled",
+        "note": "The Vault multi-GB benchmark validates scale and integrity but does not invoke a pinned Codex reconstruction oracle."
+      },
+      "status": "tested"
+    },
+    {
+      "codex": "0.153.4",
+      "ci": true,
+      "synthetic": {
+        "status": "pass",
+        "cases": 5,
+        "resumed_turns_per_arm": 2,
+        "negative_control": "pass",
+        "long_lifecycle": "pass",
+        "readonly_mcp_discovery": "pass"
+      },
+      "representative_real_corpus": {
+        "status": "pass",
+        "cases": 5,
+        "compact_allowed": 3,
+        "protected": 2,
+        "resumed_turns_per_arm": 2
+      },
+      "event_type_audit": {
+        "status": "pass",
+        "fresh_writer": true,
+        "unknown_outer_types": [],
+        "unknown_event_types": [],
+        "unknown_response_item_types": []
+      },
+      "refusal_behavior": {
+        "status": "pass",
+        "byte_identical": true
+      },
+      "multi_gb": {
+        "status": "not_version_oracled",
+        "note": "The Vault multi-GB benchmark validates scale and integrity but does not invoke a pinned Codex reconstruction oracle."
+      },
+      "status": "tested"
+    }
+  ]
+}

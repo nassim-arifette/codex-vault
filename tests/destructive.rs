@@ -5,12 +5,15 @@
 //! appended turn is ever lost", "a failed run leaves nothing behind" — only exist end to end.
 
 use codex_vault::chain::{compact_conversation, restore_conversation};
-use codex_vault::commands::{analyze_command, compact_safe_command, doctor_command, BatchOptions};
+use codex_vault::commands::{
+    analyze_command, compact_conversation_command, compact_result_value, compact_safe_command,
+    doctor_command, restore_conversation_command, BatchOptions,
+};
 use codex_vault::error::VaultError;
 use codex_vault::manifest::{load_manifest, CodexVersionSource, Status};
 use codex_vault::ops::{
     archive_impl, compact_safe_impl, compact_safe_impl_with, doctor_one, prune_one, restore_impl,
-    CompactOptions, DoctorDepth, RestoreTarget,
+    CommandResult, CompactOptions, DoctorDepth, RestoreTarget,
 };
 use codex_vault::parallel::ProgressMode;
 use codex_vault::paths::{ensure_vault_paths, manifest_path, VaultKey};
@@ -465,9 +468,11 @@ fn archive_only_fallback_records_its_snapshot_and_restore_does_not_rewind() {
         ],
     );
     let grown = fs::read(&session).unwrap();
+    codex_vault::index::build(None, true).unwrap();
 
     let fallback = compact_safe_impl(&session).unwrap();
     assert_eq!(fallback.status, "archived_only");
+    assert_eq!(fallback.stats["recovery_source_created"], true);
     assert_eq!(
         fs::read(&session).unwrap(),
         grown,
@@ -480,6 +485,8 @@ fn archive_only_fallback_records_its_snapshot_and_restore_does_not_rewind() {
         .unwrap()
         .unwrap();
     let snapshot = fallback.backup.clone().unwrap();
+    let fallback_value = compact_result_value(fallback);
+    assert_eq!(fallback_value["search_index"]["may_be_stale"], true);
     assert!(
         manifest.anchors().iter().any(|a| a.backup_path == snapshot),
         "the fallback snapshot is not reachable from the journal"
@@ -489,6 +496,11 @@ fn archive_only_fallback_records_its_snapshot_and_restore_does_not_rewind() {
         grown.len(),
         "restore should target the newest captured state"
     );
+
+    let repeated = compact_result_value(compact_safe_impl(&session).unwrap());
+    assert_eq!(repeated["status"], "archived_only");
+    assert_eq!(repeated["stats"]["recovery_source_created"], true);
+    assert_eq!(repeated["search_index"]["may_be_stale"], true);
 
     // A default restore must therefore be a no-op rather than a rewind.
     restore_impl(&session, RestoreTarget::Latest).unwrap();
@@ -500,6 +512,26 @@ fn archive_only_fallback_records_its_snapshot_and_restore_does_not_rewind() {
         "orphaned backups: {:?}",
         check.unreferenced_backups
     );
+}
+
+#[test]
+fn pre_replacement_verification_failure_does_not_claim_the_index_became_stale() {
+    let _sb = Sandbox::new();
+    fs::write(
+        codex_vault::index::database_path(),
+        b"existing derived index sentinel",
+    )
+    .unwrap();
+    let result = CommandResult {
+        status: "verification_failed".to_string(),
+        session: "synthetic".to_string(),
+        manifest: None,
+        backup: None,
+        reason: vec!["generated compact output was rejected before replacement".to_string()],
+        stats: json!({}),
+    };
+    let value = compact_result_value(result);
+    assert!(value.get("search_index").is_none());
 }
 
 #[test]
@@ -1422,8 +1454,9 @@ fn a_linear_paginated_conversation_compacts_and_restores_as_one_transaction() {
         fs::read(&leaf).unwrap(),
     ];
 
-    let preview = compact_conversation(
-        "codex://threads/chain",
+    codex_vault::index::build(None, true).unwrap();
+    let preview = compact_conversation_command(
+        "codex://threads/chain".to_string(),
         None,
         CompactOptions {
             dry_run: true,
@@ -1433,10 +1466,13 @@ fn a_linear_paginated_conversation_compacts_and_restores_as_one_transaction() {
     .unwrap();
     assert_eq!(preview["status"], "preview");
     assert_eq!(preview["page_count"], 3);
+    assert!(preview.get("search_index").is_none());
 
-    let result = compact_conversation("chain", None, CompactOptions::default()).unwrap();
+    let result =
+        compact_conversation_command("chain".to_string(), None, CompactOptions::default()).unwrap();
     assert_eq!(result["status"], "ok");
     assert_eq!(result["page_count"], 3);
+    assert_eq!(result["search_index"]["may_be_stale"], true);
     assert!(fs::metadata(&root).unwrap().len() < original[0].len() as u64);
     assert!(fs::metadata(&middle).unwrap().len() < original[1].len() as u64);
     assert!(fs::metadata(&leaf).unwrap().len() < original[2].len() as u64);
@@ -1454,8 +1490,9 @@ fn a_linear_paginated_conversation_compacts_and_restores_as_one_transaction() {
         fs::metadata(&middle).unwrap().len()
     );
 
-    let restored = restore_conversation("chain", None).unwrap();
+    let restored = restore_conversation_command("chain".to_string(), None).unwrap();
     assert_eq!(restored["status"], "ok");
+    assert_eq!(restored["search_index"]["may_be_stale"], true);
     assert_eq!(fs::read(&root).unwrap(), original[0]);
     assert_eq!(fs::read(&middle).unwrap(), original[1]);
     assert_eq!(fs::read(&leaf).unwrap(), original[2]);

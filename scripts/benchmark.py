@@ -26,6 +26,11 @@ INCREMENTAL_PROBE = "Incremental benchmark sentinel: refreshed index source."
 STAMP = "2026-01-01T00:00:00.000Z"
 
 
+def amplification(byte_count, baseline_bytes):
+    """Logical process I/O normalized to the original generated rollout size."""
+    return byte_count / max(1, baseline_bytes)
+
+
 def digest(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
@@ -88,6 +93,10 @@ class Runner:
     def __init__(self, binary, root, session):
         self.binary, self.root, self.session = binary, root, session
         self.vault = root / "vault"
+        # Keep one stable denominator for the whole case. Using the command's current native
+        # input size would make post-compaction operations look artificially enormous simply
+        # because the native rollout became small while they still verify a full recovery source.
+        self.baseline_bytes = session.stat().st_size
         self.env = dict(os.environ, CODEX_HOME=str(root / "codex"), CODEX_VAULT_HOME=str(self.vault))
         # Avoid probing an unrelated PATH Codex. The fixture declares the writer's version.
         self.env["CODEX_VAULT_CODEX_VERSION"] = "0.152.1"
@@ -123,6 +132,11 @@ class Runner:
         entry = dict(operation=name, seconds=round(elapsed, 3), exit_code=code, **counters,
                      input_bytes=before["native_bytes"], output_bytes=after["native_bytes"],
                      backup_bytes=after["backup_bytes"], index_bytes=after["index_bytes"],
+                     io_baseline_bytes=self.baseline_bytes,
+                     logical_read_amplification=round(
+                         amplification(counters["approximate_read_bytes"], self.baseline_bytes), 6),
+                     logical_write_amplification=round(
+                         amplification(counters["approximate_write_bytes"], self.baseline_bytes), 6),
                      storage_before=before, storage_after=after,
                      sampled_peak_storage_bytes=max(peak_disk[0], after["total_bytes"]),
                      net_storage_delta_bytes=after["total_bytes"] - before["total_bytes"],
@@ -290,9 +304,15 @@ def markdown(report):
         peak = max(o["peak_ram_bytes"] for o in case["operations"])
         lines.append(f"| {case['requested_gb']:g} GB | {compact['seconds']:.2f} s | {peak/1e6:.1f} MB | {case['net_saved_after_index_percent']:.2f}% | PASS |")
     for case in report["cases"]:
-        lines += ["", f"## {case['requested_gb']:g} GB", "", "| Operation | Seconds | Peak RAM (MB) | Read (GB) | Written (GB) |", "| --- | ---: | ---: | ---: | ---: |"]
+        lines += ["", f"## {case['requested_gb']:g} GB", "",
+                  "| Operation | Seconds | Peak RAM (MB) | Read (GB) | Read × input | Written (GB) | Write × input |",
+                  "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
         for op in case["operations"]:
-            lines.append(f"| {op['operation']} | {op['seconds']:.3f} | {op['peak_ram_bytes']/1e6:.1f} | {op['approximate_read_bytes']/GB:.3f} | {op['approximate_write_bytes']/GB:.3f} |")
+            lines.append(
+                f"| {op['operation']} | {op['seconds']:.3f} | {op['peak_ram_bytes']/1e6:.1f} | "
+                f"{op['approximate_read_bytes']/GB:.3f} | {op['logical_read_amplification']:.3f}× | "
+                f"{op['approximate_write_bytes']/GB:.3f} | {op['logical_write_amplification']:.3f}× |"
+            )
         scale = case["index_scalability"]
         lines += ["", "### FTS index", "",
                   "| Metric | Result |", "| --- | ---: |",
@@ -332,11 +352,12 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     version = subprocess.check_output([str(binary), "--version"], text=True).strip()
-    report = dict(schema_version=2, complete=False, requested_sizes_gb=args.sizes_gb,
+    report = dict(schema_version=3, complete=False, requested_sizes_gb=args.sizes_gb,
                   vault_version=version, binary_sha256=digest(binary), system=hardware(),
                   generator=dict(seed=args.seed, python=platform.python_version(), entropy_fraction=0.35, live_tail_fraction=0.01),
                   measurement=dict(ram="Windows PeakWorkingSetSize of each CLI process; excludes generator and child processes",
                                    io="Windows process IO transfer counters: logical I/O, not physical device traffic",
+                                   io_amplification="Logical read/write bytes divided by the original generated rollout bytes for the case",
                                    disk="Logical file lengths; temporary disk usage sampled every 200 ms",
                                    cache="Warm/OS-managed cache; no cache flush; sequential operations; one worker",
                                    latency="Wall-clock CLI process latency, including process startup and source verification"), cases=[])

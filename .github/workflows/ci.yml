@@ -25,6 +25,8 @@ jobs:
       - run: cargo +stable fmt --all -- --check
       - run: cargo +stable clippy --locked --all-targets -- -D warnings
       - run: cargo +stable test --locked
+      - run: python scripts/test-benchmark-report.py
+      - run: python scripts/test-compatibility-matrix.py
       - if: runner.os == 'Windows'
         run: cargo +stable build --locked --release
       - if: runner.os == 'Windows'
@@ -60,7 +62,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        codex: ['0.152.1', '0.153.4']
+        codex: ['0.150.0', '0.151.0', '0.152.1', '0.153.4']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
