@@ -65,6 +65,7 @@ codex-vault compact SESSION_ID
 codex-vault compact-conversation THREAD_ID --dry-run
 codex-vault compact-conversation THREAD_ID
 codex-vault doctor SESSION_ID --deep
+codex-vault storage
 ```
 
 `scan` shows the five largest files first. Use `scan --all` for the full list or
@@ -101,7 +102,11 @@ and makes archived user and assistant messages searchable.
 
 A smaller rollout does **not** always mean less disk usage: retained backups cost space.
 `compact --dry-run` estimates the net change; completed operations include backups and metadata
-in their storage report and warn when total usage increases.
+in their storage report and warn when total usage increases. `codex-vault storage` gives a
+read-only inventory of native rollouts, required recovery snapshots, unreferenced backups,
+recovery metadata and the rebuildable search index. If a recovery journal is unreadable, unmatched
+backups are reported as ambiguous rather than being classified as unreferenced. The inventory does
+not decide whether any backup is eligible for deletion.
 
 ## Tested locally
 

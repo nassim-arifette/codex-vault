@@ -255,6 +255,156 @@ fn scan_references_disambiguate_pages_and_empty_filters_are_clear() {
     assert!(!text.contains("Ref:"));
 }
 
+fn file_tree(root: &std::path::Path) -> Vec<(PathBuf, Vec<u8>)> {
+    if !root.exists() {
+        return Vec::new();
+    }
+    let mut files: Vec<_> = walkdir::WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .map(Result::unwrap)
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| {
+            let relative = entry.path().strip_prefix(root).unwrap().to_path_buf();
+            (relative, fs::read(entry.path()).unwrap())
+        })
+        .collect();
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files
+}
+
+#[test]
+fn storage_inventory_is_read_only_and_fails_closed_on_unreadable_journals() {
+    let sb = CliSandbox::new();
+    let native_bytes = fs::metadata(&sb.session).unwrap().len();
+
+    // Inventory must not create an empty Vault merely because none exists yet.
+    let empty = sb.ok(&["storage"]);
+    assert_eq!(empty["kind"], "storage_inventory");
+    assert_eq!(empty["read_only"], true);
+    assert_eq!(empty["native_rollouts"]["files"], 1);
+    assert_eq!(empty["native_rollouts"]["bytes"], native_bytes);
+    assert_eq!(empty["required_recovery_anchors"]["files"], 0);
+    assert_eq!(empty["search_index"]["rebuildable"], true);
+    assert!(!sb.dir.path().join("vault").exists());
+
+    sb.add_historical_message();
+    sb.ok(&["index"]);
+    sb.ok(&["archive", "cli-test"]);
+    let vault = sb.dir.path().join("vault");
+    let orphan = vault.join("backups/rollout-cli-test.snapshot-orphan.jsonl.zst");
+    fs::write(&orphan, b"orphan bytes").unwrap();
+    let missing_owner = vault.join("backups/missing-owner.snapshot-1.jsonl.zst");
+    fs::write(&missing_owner, b"unknown owner").unwrap();
+    let not_a_backup = vault.join("backups/notes.txt");
+    fs::write(&not_a_backup, b"not a backup archive").unwrap();
+    let before = file_tree(sb.dir.path());
+
+    let report = sb.ok(&["storage"]);
+    assert_eq!(report["read_only"], true);
+    assert_eq!(report["required_recovery_anchors"]["files"], 1);
+    assert!(
+        report["required_recovery_anchors"]["bytes"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(
+        report["required_recovery_anchors"]["immutable_originals"]["files"],
+        1
+    );
+    assert_eq!(
+        report["unreferenced_backups"]["classification"],
+        "not_referenced_by_readable_owner_journal"
+    );
+    assert_eq!(report["unreferenced_backups"]["files"], 1);
+    assert_eq!(
+        report["unreferenced_backups"]["bytes"],
+        fs::metadata(&orphan).unwrap().len()
+    );
+    assert_eq!(
+        report["unreferenced_backups"]["retention_eligibility"],
+        "not_assessed"
+    );
+    assert_eq!(report["ambiguous_backups"]["files"], 1);
+    assert_eq!(
+        report["ambiguous_backups"]["bytes"],
+        fs::metadata(&missing_owner).unwrap().len()
+    );
+    assert_eq!(
+        report["ambiguous_backups"]["missing_owner_journal_files"],
+        1
+    );
+    assert_eq!(report["other_backup_directory_files"]["files"], 1);
+    assert_eq!(
+        report["other_backup_directory_files"]["bytes"],
+        fs::metadata(&not_a_backup).unwrap().len()
+    );
+    assert_eq!(report["retention_eligibility"], "not_assessed");
+    assert_eq!(
+        report["vault"]["backup_bytes"].as_u64().unwrap(),
+        report["required_recovery_anchors"]["bytes"]
+            .as_u64()
+            .unwrap()
+            + report["unreferenced_backups"]["bytes"].as_u64().unwrap()
+            + report["ambiguous_backups"]["bytes"].as_u64().unwrap()
+            + report["other_backup_directory_files"]["bytes"]
+                .as_u64()
+                .unwrap()
+    );
+    assert_eq!(
+        report["total_bytes"].as_u64().unwrap(),
+        report["native_rollouts"]["bytes"].as_u64().unwrap()
+            + report["vault"]["bytes"].as_u64().unwrap()
+    );
+    assert!(report["search_index"]["bytes"].as_u64().unwrap() > 0);
+    assert_eq!(report["search_index"]["derived"], true);
+    assert_eq!(
+        report["search_index"]["rebuild_command"],
+        "codex-vault index --rebuild"
+    );
+    assert_eq!(
+        file_tree(sb.dir.path()),
+        before,
+        "storage command mutated files"
+    );
+
+    // An unreadable journal could reference the apparent orphan. Fail closed instead of calling
+    // it garbage or safe-to-prune.
+    fs::write(vault.join("manifests/unreadable.json"), b"{ not valid json").unwrap();
+    let before = file_tree(sb.dir.path());
+    let ambiguous = sb.ok(&["storage"]);
+    assert_eq!(ambiguous["recovery_metadata"]["unreadable_manifests"], 1);
+    assert_eq!(
+        ambiguous["unreferenced_backups"]["classification"],
+        "indeterminate"
+    );
+    assert!(ambiguous["unreferenced_backups"]["bytes"].is_null());
+    assert_eq!(
+        ambiguous["unreferenced_backups"]["retention_eligibility"],
+        "not_assessed"
+    );
+    assert_eq!(ambiguous["ambiguous_backups"]["files"], 2);
+    assert_eq!(
+        ambiguous["ambiguous_backups"]["bytes"],
+        fs::metadata(&orphan).unwrap().len() + fs::metadata(&missing_owner).unwrap().len()
+    );
+    assert_eq!(ambiguous["required_recovery_anchors"]["files"], 1);
+    assert_eq!(
+        file_tree(sb.dir.path()),
+        before,
+        "storage command mutated files"
+    );
+
+    let human = sb.run(&["--human", "storage"], None);
+    assert!(human.status.success());
+    let text = String::from_utf8(human.stdout).unwrap();
+    assert!(text.contains("Storage inventory"));
+    assert!(text.contains("Search index (rebuildable)"));
+    assert!(text.contains("Ambiguous backups"));
+    assert!(text.contains("No retention eligibility was assessed and no action was taken."));
+}
+
 #[test]
 fn cli_short_commands_roundtrip_and_integrity_exit_codes() {
     let sb = CliSandbox::new();

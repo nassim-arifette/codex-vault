@@ -209,6 +209,26 @@ Prune is a dry run unless `--apply` is present. `--unreferenced-backups` include
 no recovery journal references. Referenced recovery snapshots are retained, and an unreadable
 journal prevents judging backups safe to remove. This is not a backup retention policy.
 
+## Storage inventory
+
+```powershell
+codex-vault storage
+codex-vault --json storage
+```
+
+`storage` is strictly read-only. It reports logical file bytes for native Codex rollouts,
+immutable originals, per-file pre-compact/pre-restore snapshots, whole-conversation chain
+snapshots, other required recovery anchors, recovery metadata and the SQLite search index. The
+index is explicitly marked derived and rebuildable with `codex-vault index --rebuild`.
+
+Backup archives omitted by their own readable journal are reported separately as unreferenced.
+This classification fails closed: if the expected owner journal is missing, its archive is
+**ambiguous**; if even one recovery journal is unreadable, every otherwise-unmatched archive is
+ambiguous. Arbitrary non-archive files under `backups/` are counted separately and never called
+unreferenced backups. Missing files that are still referenced by readable recovery journals are
+also surfaced. The report explicitly sets retention eligibility to `not_assessed`; `storage` never
+creates the Vault directory, deletes backups or changes retention state.
+
 Per-file `compact` never shortens a page needed by a later rollout. Use `compact-conversation`
 for a complete supported linear chain instead. Spawned threads are protected by default;
 `--allow-spawned-threads` overrides that protection for unvalidated per-file cases. Codex-managed

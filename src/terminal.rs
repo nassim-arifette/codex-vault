@@ -130,6 +130,119 @@ pub fn render_scan(value: &Value, all: bool, paths: bool) {
 }
 
 pub fn render(value: &Value) {
+    if value["kind"] == "storage_inventory" {
+        let required = &value["required_recovery_anchors"];
+        println!("Storage inventory (logical file bytes; read-only)\n");
+        println!(
+            "{:<34} {:>12}",
+            "Native rollouts",
+            format_size(value["native_rollouts"]["bytes"].as_u64().unwrap_or(0))
+        );
+        println!(
+            "{:<34} {:>12}",
+            "Immutable originals",
+            format_size(
+                required["immutable_originals"]["bytes"]
+                    .as_u64()
+                    .unwrap_or(0)
+            )
+        );
+        println!(
+            "{:<34} {:>12}",
+            "Pre-compact snapshots",
+            format_size(
+                required["precompact_snapshots"]["bytes"]
+                    .as_u64()
+                    .unwrap_or(0)
+            )
+        );
+        println!(
+            "{:<34} {:>12}",
+            "Whole-chain snapshots",
+            format_size(
+                required["prechain_snapshots"]["bytes"]
+                    .as_u64()
+                    .unwrap_or(0)
+            )
+        );
+        println!(
+            "{:<34} {:>12}",
+            "Pre-restore snapshots",
+            format_size(
+                required["prerestore_snapshots"]["bytes"]
+                    .as_u64()
+                    .unwrap_or(0)
+            )
+        );
+        println!(
+            "{:<34} {:>12}",
+            "Pre-restore chain snapshots",
+            format_size(
+                required["prerestore_chain_snapshots"]["bytes"]
+                    .as_u64()
+                    .unwrap_or(0)
+            )
+        );
+        println!(
+            "{:<34} {:>12}",
+            "Other required snapshots",
+            format_size(
+                required["manual_snapshots"]["bytes"].as_u64().unwrap_or(0)
+                    + required["other_recovery_anchors"]["bytes"]
+                        .as_u64()
+                        .unwrap_or(0)
+            )
+        );
+        if let Some(bytes) = value["unreferenced_backups"]["bytes"].as_u64() {
+            println!("{:<34} {:>12}", "Unreferenced backups", format_size(bytes));
+        } else {
+            println!("{:<34} {:>12}", "Unreferenced backups", "unknown");
+        }
+        if value["ambiguous_backups"]["files"].as_u64().unwrap_or(0) > 0 {
+            println!(
+                "{:<34} {:>12}",
+                "Ambiguous backups",
+                format_size(value["ambiguous_backups"]["bytes"].as_u64().unwrap_or(0))
+            );
+            println!("  Some backup archives cannot be classified from the readable journals.");
+        }
+        if value["other_backup_directory_files"]["files"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+        {
+            println!(
+                "{:<34} {:>12}",
+                "Other files in backups directory",
+                format_size(
+                    value["other_backup_directory_files"]["bytes"]
+                        .as_u64()
+                        .unwrap_or(0)
+                )
+            );
+        }
+        println!(
+            "{:<34} {:>12}",
+            "Recovery metadata",
+            format_size(value["recovery_metadata"]["bytes"].as_u64().unwrap_or(0))
+        );
+        println!(
+            "{:<34} {:>12}",
+            "Search index (rebuildable)",
+            format_size(value["search_index"]["bytes"].as_u64().unwrap_or(0))
+        );
+        println!(
+            "\n{:<34} {:>12}",
+            "Total",
+            format_size(value["total_bytes"].as_u64().unwrap_or(0))
+        );
+        let missing = required["missing_referenced_files"].as_u64().unwrap_or(0);
+        if missing > 0 {
+            println!("Warning: {missing} recorded recovery anchor(s) are missing from disk.");
+        }
+        println!("No retention eligibility was assessed and no action was taken.");
+        return;
+    }
     if let Some(matches) = value["matches"].as_array() {
         for hit in matches {
             println!(

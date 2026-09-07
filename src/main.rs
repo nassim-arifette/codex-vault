@@ -21,7 +21,7 @@ use std::process::ExitCode;
     name = "codex-vault",
     version,
     about = "Recover, verify and safely compact local Codex conversations",
-    after_help = "Examples:\n  codex-vault menu\n  codex-vault compact SESSION --dry-run\n  codex-vault index --cwd .\n  codex-vault search \"authentication tokens\" --cwd .\n  codex-vault read PASSAGE_ID\n\nUse COMMAND --help for details."
+    after_help = "Examples:\n  codex-vault menu\n  codex-vault compact SESSION --dry-run\n  codex-vault storage\n  codex-vault index --cwd .\n  codex-vault search \"authentication tokens\" --cwd .\n  codex-vault read PASSAGE_ID\n\nUse COMMAND --help for details."
 )]
 struct Cli {
     /// Print compact JSON, including in an interactive terminal.
@@ -114,6 +114,12 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         offset: usize,
     },
+    /// Show native, recovery and rebuildable index storage without changing anything.
+    #[command(
+        after_help = "Example:\n  codex-vault storage\n\nReports native rollout bytes, required recovery anchors, unreferenced or ambiguous backups, recovery metadata and the rebuildable search index. This command never deletes files."
+    )]
+    #[command(display_order = 11)]
+    Storage,
     /// Choose a conversation and an action in the terminal.
     #[command(
         after_help = "Examples:\n  codex-vault menu\n  codex-vault menu --cwd C:\\projects\\sample-app\n\nUse /text to filter titles/projects, s to sort by size, and q to quit."
@@ -359,6 +365,7 @@ fn run(command: Command, batch: BatchOptions) -> Result<Value> {
             limit,
             offset,
         } => codex_vault::index::read(&id, cwd.as_deref().map(std::path::Path::new), offset, limit),
+        Command::Storage => codex_vault::storage::inventory(),
         Command::Menu { .. } => unreachable!("menu handled before JSON commands"),
         Command::Scan { cwd, .. } => scan_command(cwd),
         Command::Analyze {
