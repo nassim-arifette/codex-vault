@@ -9,7 +9,7 @@ use crate::discovery::{
 use crate::error::{Result, VaultError};
 use crate::ops::{
     archive_impl, compact_safe_impl_with, doctor_one, list_anchors, prune_one, restore_impl,
-    CommandResult, CompactOptions, DoctorDepth, RestoreTarget,
+    CommandResult, CommandStatus, CompactOptions, DoctorDepth, RestoreTarget,
 };
 use crate::parallel::{map_ordered, Progress, ProgressMode};
 use crate::paths::{codex_root, detect_codex_version, vault_root};
@@ -37,19 +37,22 @@ fn add_stale_index_hint(value: &mut Value, reason: &str) {
 }
 
 fn compact_result_may_stale_index(result: &CommandResult) -> bool {
-    match result.status.as_str() {
-        "ok" | "restored_after_failed_verification" => true,
-        "archived_only" => result.stats["recovery_source_created"] == true,
+    match result.status_kind() {
+        CommandStatus::Ok | CommandStatus::RestoredAfterFailedVerification => true,
+        CommandStatus::ArchivedOnly => result.recovery_source_created(),
         _ => false,
     }
 }
 
 fn restore_result_may_stale_index(result: &CommandResult) -> bool {
-    result.status == "ok" && result.stats["pre_restore_backup"].is_string()
+    result.status_kind() == CommandStatus::Ok && result.pre_restore_backup_created()
 }
 
 pub fn archive_result_value(result: CommandResult) -> Value {
-    let created_recovery_source = matches!(result.status.as_str(), "ok" | "snapshot_created");
+    let created_recovery_source = matches!(
+        result.status_kind(),
+        CommandStatus::Ok | CommandStatus::SnapshotCreated
+    );
     let mut value = json!(result);
     if created_recovery_source {
         add_stale_index_hint(
