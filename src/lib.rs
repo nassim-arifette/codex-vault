@@ -6,6 +6,7 @@
 
 pub mod analysis;
 pub mod backup;
+pub mod chain;
 pub mod commands;
 pub mod discovery;
 pub mod error;

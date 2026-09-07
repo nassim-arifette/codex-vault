@@ -20,6 +20,7 @@
 //! `CODEX_VAULT_DIFF_CASES`.
 
 use codex_vault::analysis::{analyze_session, CompactionAnalysis};
+use codex_vault::chain::{compact_conversation, restore_conversation};
 use codex_vault::discovery::{discover_sessions, lineage_successors, SessionInfo};
 use codex_vault::ops::compact_safe_impl;
 use codex_vault::paths::resolve_codex_binary;
@@ -832,6 +833,38 @@ fn compact_in_sandbox(sandbox: &DiffSandbox) -> Result<(u64, u64), String> {
     Ok((before, after))
 }
 
+fn sandbox_rollout_bytes(sandbox: &DiffSandbox) -> Vec<(PathBuf, Vec<u8>)> {
+    let base = sandbox.codex_home().join("sessions");
+    let mut out = Vec::new();
+    for entry in walkdir::WalkDir::new(&base)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+        if let Ok(head) = read_session_head(path) {
+            if head.session_id == sandbox.session_id {
+                out.push((
+                    path.strip_prefix(&base).unwrap().to_path_buf(),
+                    fs::read(path).unwrap(),
+                ));
+            }
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+fn compact_chain_in_sandbox(sandbox: &DiffSandbox) -> Result<Value, String> {
+    let _env = SandboxEnv::enter(sandbox);
+    compact_conversation(
+        &sandbox.session_id,
+        None,
+        codex_vault::ops::CompactOptions::default(),
+    )
+    .map_err(|e| e.to_string())
+}
+
 // ===================================================================================== tests
 
 #[test]
@@ -924,6 +957,97 @@ fn reconstruction_is_identical_after_compaction() {
         cases.len(),
         failures.join("\n\n")
     );
+}
+
+#[test]
+#[ignore = "needs Codex and CODEX_VAULT_CHAIN_CASE pointing to a real multi-page thread id"]
+fn paginated_chain_reconstruction_is_identical_after_whole_conversation_compaction() {
+    require_codex();
+    let id = std::env::var("CODEX_VAULT_CHAIN_CASE")
+        .expect("set CODEX_VAULT_CHAIN_CASE to a private multi-page thread id");
+    let fixture = corpus_sessions()
+        .iter()
+        .find(|s| s.session_id == id)
+        .unwrap_or_else(|| panic!("no live rollout found for requested chain case"));
+    let sandbox = DiffSandbox::new(&fixture.path, &id).expect("chain sandbox");
+
+    let before = capture_reconstruction(&sandbox).expect("capture original first turn");
+    let before_second = capture_reconstruction(&sandbox).expect("capture original second turn");
+    sandbox
+        .restore_from(&fixture.path)
+        .expect("reset complete original chain");
+    let pristine = sandbox_rollout_bytes(&sandbox);
+    assert!(
+        pristine.len() > 1,
+        "requested case is not a multi-page chain"
+    );
+    let original_total: usize = pristine.iter().map(|(_, bytes)| bytes.len()).sum();
+
+    let result = compact_chain_in_sandbox(&sandbox).expect("whole-chain compaction");
+    assert_eq!(result["status"], "ok");
+    let compacted = sandbox_rollout_bytes(&sandbox);
+    let compacted_total: usize = compacted.iter().map(|(_, bytes)| bytes.len()).sum();
+    assert!(
+        compacted_total < original_total,
+        "whole chain did not shrink"
+    );
+
+    let after = capture_reconstruction(&sandbox).expect("capture compacted first turn");
+    let after_second = capture_reconstruction(&sandbox).expect("capture compacted second turn");
+    compare_requests(&before, &after).expect("first resumed turn diverged after chain compaction");
+    compare_requests(&before_second, &after_second)
+        .expect("second resumed turn diverged after chain compaction");
+
+    {
+        let _env = SandboxEnv::enter(&sandbox);
+        restore_conversation(&id, None).expect("whole-chain exact restore");
+    }
+    let restored = sandbox_rollout_bytes(&sandbox);
+    assert_eq!(
+        restored, pristine,
+        "whole-chain restore was not byte-identical"
+    );
+    eprintln!(
+        "whole-chain differential PASS: {} pages, {:.2} MB -> {:.2} MB, two resumed turns identical",
+        pristine.len(),
+        original_total as f64 / 1_048_576.0,
+        compacted_total as f64 / 1_048_576.0
+    );
+    eprintln!(
+        "whole-chain measured report: {}",
+        json!({
+            "storage": result["storage"],
+            "performance": result["performance"]
+        })
+    );
+}
+
+#[test]
+#[ignore = "needs Codex and CODEX_VAULT_BASELINE_CASE pointing to a private thread id"]
+fn requested_original_reconstruction_baseline_resumes_twice() {
+    require_codex();
+    let id = std::env::var("CODEX_VAULT_BASELINE_CASE")
+        .expect("set CODEX_VAULT_BASELINE_CASE to the thread id to baseline");
+    let fixture = corpus_sessions()
+        .iter()
+        .find(|s| s.session_id == id)
+        .unwrap_or_else(|| panic!("no live rollout found for requested baseline case"));
+    let sandbox = DiffSandbox::new(&fixture.path, &id).expect("baseline sandbox");
+    let first = capture_reconstruction(&sandbox).expect("capture original first resumed turn");
+    let second = capture_reconstruction(&sandbox).expect("capture original second resumed turn");
+    assert!(
+        first["input"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()),
+        "first baseline reconstruction must contain model context"
+    );
+    assert!(
+        second["input"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()),
+        "second baseline reconstruction must contain model context"
+    );
+    eprintln!("original reconstruction baseline PASS over two resumed turns");
 }
 
 #[test]

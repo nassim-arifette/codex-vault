@@ -2,7 +2,9 @@
 
 use crate::error::Result;
 use crate::format::{EventKind, RecordKind};
-use crate::rollout::{scan_rollout_metadata, scan_rollout_metadata_within, MetadataScan};
+use crate::rollout::{
+    scan_rollout_metadata, scan_rollout_metadata_within, scan_rollout_prefix_within, MetadataScan,
+};
 use serde::Serialize;
 use std::path::Path;
 
@@ -283,4 +285,17 @@ pub fn analyze_session(path: &Path) -> Result<CompactionAnalysis> {
 /// reference behaviour the differential tests compare against.
 pub fn analyze_session_within(path: &Path, window: usize) -> Result<CompactionAnalysis> {
     Ok(analyze_scan(scan_rollout_metadata_within(path, window)?))
+}
+
+/// Analyze only the exact predecessor prefix consumed by a paginated successor.
+pub fn analyze_session_prefix_within(
+    path: &Path,
+    end_byte_offset: u64,
+    window: usize,
+) -> Result<CompactionAnalysis> {
+    Ok(analyze_scan(scan_rollout_prefix_within(
+        path,
+        end_byte_offset,
+        window,
+    )?))
 }

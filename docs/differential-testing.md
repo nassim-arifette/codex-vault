@@ -102,6 +102,25 @@ A missing record, `passed: false`, or nonzero test exit is a failed/incomplete v
 Reports append so a failure preserves earlier results; use a fresh path for every run.
 Raw logs and captured requests can contain private data and must never be published.
 
+### Whole-conversation pagination check
+
+The same harness has an ignored chain test for a private multi-page case. It copies every sibling
+page into one throwaway `CODEX_HOME`, captures two resumed turns from the original chain, runs
+`compact-conversation`, captures two resumed turns again, applies the same strict volatile-field
+allowlist, then runs `restore-conversation` and compares every rollout byte-for-byte with the
+pristine copy:
+
+```powershell
+$env:CODEX_VAULT_CHAIN_CASE = "PRIVATE_THREAD_ID"
+cargo test --release --test differential `
+  paginated_chain_reconstruction_is_identical_after_whole_conversation_compaction `
+  -- --ignored --nocapture
+```
+
+The real thread ID and transcript stay local. A local four-page linear case has passed this check
+against Codex 0.153.4; that validates the tested linear layout, not arbitrary forks or future Codex
+formats.
+
 ## Long lifecycle regression
 
 `tests/common/mod.rs` supplies the same scenario to the ordinary CLI test and the ignored

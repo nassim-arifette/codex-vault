@@ -26,6 +26,7 @@ pub const SCHEMA_ADAPTER: &str = "codex-bounded-context-2026-09-v0.1";
 pub enum Mode {
     Archive,
     CompactSafe,
+    CompactConversation,
     ArchiveOnlyFallback,
 }
 

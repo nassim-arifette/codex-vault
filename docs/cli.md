@@ -135,6 +135,8 @@ codex-vault analyze SESSION_ID
 codex-vault archive SESSION_ID
 codex-vault compact SESSION_ID --dry-run
 codex-vault compact SESSION_ID
+codex-vault compact-conversation THREAD_ID --dry-run
+codex-vault compact-conversation THREAD_ID
 codex-vault doctor SESSION_ID --deep
 ```
 
@@ -148,6 +150,19 @@ negative savings mean total storage increased. Already compacted files return `a
 without rewriting the transcript or its restore target. See the
 [storage accounting rules](safety-model.md#storage-accounting).
 
+`compact-conversation` is the conversation-level command for Codex pagination. A thread ID,
+`codex://threads/THREAD_ID` reference, or path to one page resolves the complete discovered chain.
+The dry run reports every affected page, the predecessor prefix each successor consumes, native
+bytes, estimated new recovery bytes and temporary-space requirements. Mutation is supported only
+after the graph is proven to be one complete linear chain. Missing pages, ambiguous page IDs,
+cycles and forks are refused before any native replacement.
+
+For an eligible chain, Vault verifies an exact compressed snapshot of every page, prepares every
+replacement, rechecks the complete source set, then updates predecessor pages and the successors'
+`history_base.end_byte_offset` values under a durable multi-file transaction. An interruption
+after a partial replacement leaves a `prepared` transaction that `restore-conversation` can use
+to recover the exact complete pre-operation state.
+
 `doctor` checks hashes and the recovery journal. `--deep` also decompresses every recorded
 archive and parses the transcript. It diagnoses problems; it does not repair them.
 
@@ -157,6 +172,7 @@ archive and parses the transcript. It diagnoses problems; it does not repair the
 codex-vault restore SESSION_ID --list
 codex-vault restore SESSION_ID
 codex-vault restore SESSION_ID --original
+codex-vault restore-conversation THREAD_ID
 ```
 
 These commands respectively list recovery states, restore the newest recorded state and restore
@@ -168,6 +184,12 @@ codex-vault restore SESSION_ID --to "C:\backups\recorded-snapshot.jsonl.zst"
 
 The path must belong to that rollout's journal. Restore saves the current transcript before
 replacing it, so that state remains recoverable. [Recovery journal details](recovery-journal.md)
+
+`restore-conversation` applies the same principle to every page of the latest recoverable
+whole-conversation transaction. It snapshots the current complete chain before replacement and
+restores every original filename and byte sequence together. If the latest transaction is still
+`prepared`, this command treats it as an interrupted operation and recovers its pre-operation
+anchors.
 
 ## Batches and cleanup
 
@@ -187,8 +209,9 @@ Prune is a dry run unless `--apply` is present. `--unreferenced-backups` include
 no recovery journal references. Referenced recovery snapshots are retained, and an unreadable
 journal prevents judging backups safe to remove. This is not a backup retention policy.
 
-Pages needed by later rollouts cannot be compacted. Spawned threads are protected by default;
-`--allow-spawned-threads` overrides that protection for unvalidated cases. Codex-managed
+Per-file `compact` never shortens a page needed by a later rollout. Use `compact-conversation`
+for a complete supported linear chain instead. Spawned threads are protected by default;
+`--allow-spawned-threads` overrides that protection for unvalidated per-file cases. Codex-managed
 `.jsonl.zst` rollouts remain read-only. [Format and compatibility details](codex-format.md)
 
 ## Search history

@@ -16,6 +16,8 @@ The journal records which verified backups can restore each rollout. Keep the va
 │   └── SESSION.snapshot-TIMESTAMP.jsonl.zst
 ├── manifests\
 │   └── SESSION.json
+├── transactions\
+│   └── chain-THREAD-TIMESTAMP.json
 └── summaries\
     └── SESSION.md
 ```
@@ -53,3 +55,12 @@ destructive operation:
 - `status` moves `prepared` → `ok`. A journal left at `prepared` means a compaction was
   interrupted before it committed; `doctor` reports that as a warning and `restore` still knows
   the exact pre-compaction state.
+
+Whole-conversation compaction adds a transaction journal under `transactions\`. Before its first
+native replacement, every participating rollout has a verified recovery anchor in its ordinary
+per-file manifest and the transaction records the complete page set plus intended result hashes.
+The transaction moves `prepared` → `ok`, recording each page as it is applied. If the process dies
+after only some pages were replaced, `restore-conversation` recognizes the latest `prepared`
+transaction and restores every page from its exact pre-operation anchor. A successful recovery
+marks that interrupted transaction `recovered`; the restore itself is another reversible
+transaction because the hybrid/current state is snapshotted first.

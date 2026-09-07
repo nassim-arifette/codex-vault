@@ -31,14 +31,26 @@ differentially against the same code run unbounded.
 
 Codex can store one conversation across multiple rollout files. A later page's `history_base`
 records a byte offset into its predecessor. Shortening that predecessor invalidates the offset
-and can make the thread impossible to resume. Vault refuses to compact a page with a successor,
-without an override. Only the newest page can be a compaction candidate. `doctor` reports broken
-lineage; restoring a suitable recorded state can recover the required predecessor bytes.
+and can make the thread impossible to resume. The per-file `compact` command therefore still
+refuses a page with a successor, without an override.
+
+`compact-conversation` handles a complete **linear** paginated chain as one operation. It follows
+actual `history_base.thread_id` references, analyzes exactly the predecessor prefix named by each
+`end_byte_offset`, keeps any bytes after that boundary, compacts the consumed prefix, and rewrites
+the successor's byte boundary to the transformed prefix length. Existing ordinal boundaries are
+preserved because the retained records keep their original ordinals. Every page replacement is
+prepared before commit and covered by a complete pre-operation recovery snapshot.
+
+The graph must have one root and one successor at each step. Missing dependencies, duplicate page
+IDs, cycles, disconnected components and forks are refused before mutation; fork reconstruction
+has not yet been proven safe. `doctor` still reports an already-broken lineage. A prepared
+whole-conversation transaction can be recovered with `restore-conversation`.
 
 Spawned threads, including sub-agents and guardian reviews, are protected by default. Codex will
 not resume them standalone, so the differential oracle cannot validate their reconstruction in
 the same way as user threads. `--allow-spawned-threads` is an explicit override for these
-unvalidated cases. It does not bypass the pagination guard.
+unvalidated cases. It does not bypass the per-file pagination guard or opt a spawned thread into
+whole-conversation compaction.
 
 Codex-managed `.jsonl.zst` files can be discovered, analyzed and indexed but are read-only in Vault.
 Codex must rematerialize a native JSONL before Vault can modify it.

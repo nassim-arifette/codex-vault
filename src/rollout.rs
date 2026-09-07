@@ -245,6 +245,26 @@ pub fn scan_rollout_metadata(path: &Path) -> Result<MetadataScan> {
 /// `window` is the number of reconstruction-relevant records kept for the reverse walk;
 /// `usize::MAX` disables the cap, which the differential tests use as the reference behaviour.
 pub fn scan_rollout_metadata_within(path: &Path, window: usize) -> Result<MetadataScan> {
+    scan_rollout_metadata_range(path, window, None)
+}
+
+/// Scan exactly the prefix another paginated rollout declares through `history_base`.
+///
+/// The offset is a reconstruction boundary, so accepting an offset in the middle of a JSONL
+/// record would make any rewrite ambiguous. Refuse such a layout rather than rounding it.
+pub fn scan_rollout_prefix_within(
+    path: &Path,
+    end_byte_offset: u64,
+    window: usize,
+) -> Result<MetadataScan> {
+    scan_rollout_metadata_range(path, window, Some(end_byte_offset))
+}
+
+fn scan_rollout_metadata_range(
+    path: &Path,
+    window: usize,
+    end_byte_offset: Option<u64>,
+) -> Result<MetadataScan> {
     let capacity = window.max(1);
     let mut reader = open_rollout_reader(path)?;
     let mut hasher = Sha256::new();
@@ -260,10 +280,23 @@ pub fn scan_rollout_metadata_within(path: &Path, window: usize) -> Result<Metada
     let mut total_bytes = 0u64;
 
     loop {
+        if end_byte_offset.is_some_and(|end| total_bytes == end) {
+            break;
+        }
         line.clear();
         let bytes_read = reader.read_line(&mut line)?;
         if bytes_read == 0 {
             break;
+        }
+        if let Some(end) = end_byte_offset {
+            if total_bytes.saturating_add(bytes_read as u64) > end {
+                return Err(VaultError::InvalidInput {
+                    reason: format!(
+                        "paginated history byte offset {end} falls inside a JSONL record in {}",
+                        path.display()
+                    ),
+                });
+            }
         }
         hasher.update(line.as_bytes());
         let bytes = bytes_read as u64;
@@ -300,6 +333,17 @@ pub fn scan_rollout_metadata_within(path: &Path, window: usize) -> Result<Metada
             }
         }
         physical_index += 1;
+    }
+
+    if let Some(end) = end_byte_offset {
+        if total_bytes != end {
+            return Err(VaultError::InvalidInput {
+                reason: format!(
+                    "paginated history byte offset {end} is past the readable prefix of {} ({total_bytes} bytes)",
+                    path.display()
+                ),
+            });
+        }
     }
 
     Ok(MetadataScan {

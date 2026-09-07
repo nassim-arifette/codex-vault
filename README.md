@@ -62,6 +62,8 @@ rollout path from `scan`:
 codex-vault scan --cwd .
 codex-vault compact SESSION_ID --dry-run
 codex-vault compact SESSION_ID
+codex-vault compact-conversation THREAD_ID --dry-run
+codex-vault compact-conversation THREAD_ID
 codex-vault doctor SESSION_ID --deep
 ```
 
@@ -71,6 +73,13 @@ codex-vault doctor SESSION_ID --deep
 Close the relevant Codex session before compacting or restoring. Direct commands apply without
 a confirmation prompt. To restore the first saved state, use
 `codex-vault restore SESSION_ID --original`.
+
+For a conversation split across several paginated rollout files, use `compact-conversation`
+rather than compacting pages manually. Vault resolves the complete dependency chain, snapshots
+every page, rewrites successor byte boundaries as one coordinated transaction, and refuses
+missing, cyclic, ambiguous or forked layouts before mutation. `restore-conversation THREAD_ID`
+restores the exact complete pre-operation chain. The currently validated whole-conversation
+layout is a single linear pagination chain; forks remain a safe refusal.
 
 To find an older message:
 
@@ -120,8 +129,10 @@ filesystem. [Linux validation and mount limitations](docs/benchmarks.md#linux-an
 ## Safety model
 
 Vault verifies backups before replacement, records recovery references in a journal and checks
-the result afterward. Unsupported layouts, pages required by later rollouts and spawned threads
-are protected; Codex-managed compressed rollouts remain read-only.
+the result afterward. Ordinary per-file `compact` still protects pages required by later
+rollouts; `compact-conversation` is the validated path for a complete linear paginated chain.
+Unsupported dependency layouts and spawned threads are protected; Codex-managed compressed
+rollouts remain read-only.
 
 CI checks reconstruction with **Codex 0.152.1 and 0.153.4**, plus Windows/Linux tests and installation
 on fresh Windows and Linux runners. This covers the tested cases, not every future Codex format.

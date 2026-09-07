@@ -4,8 +4,8 @@ use clap::{CommandFactory, Parser, Subcommand};
 mod terminal;
 use codex_vault::commands::BatchOptions;
 use codex_vault::commands::{
-    analyze_command, archive_command, compact_safe_command, doctor_command, prune_command,
-    restore_command, scan_command,
+    analyze_command, archive_command, compact_conversation_command, compact_safe_command,
+    doctor_command, prune_command, restore_command, restore_conversation_command, scan_command,
 };
 use codex_vault::error::{Result, VaultError};
 use codex_vault::ops::CompactOptions;
@@ -208,6 +208,25 @@ enum Command {
         #[arg(long)]
         allow_spawned_threads: bool,
     },
+    /// Compact every page of one eligible paginated conversation as one coordinated transaction.
+    #[command(
+        name = "compact-conversation",
+        after_help = "Examples:\n  codex-vault compact-conversation THREAD_ID --dry-run\n  codex-vault compact-conversation codex://threads/THREAD_ID\n\nOnly complete linear pagination chains are currently supported. Forks, cycles, missing pages and unknown boundaries are refused before mutation."
+    )]
+    #[command(display_order = 6)]
+    CompactConversation {
+        /// Thread ID, codex://threads/ reference, filename stem or full path to any page.
+        session: String,
+        /// Limit discovery to related project paths.
+        #[arg(long)]
+        cwd: Option<String>,
+        /// Preview the complete chain and storage estimate without changing native files.
+        #[arg(long)]
+        dry_run: bool,
+        /// Maximum reconstruction records retained for each page/prefix proof.
+        #[arg(long, default_value_t = DEFAULT_SCAN_WINDOW)]
+        scan_window: usize,
+    },
     /// Restore an exact recovery state recorded by Codex Vault.
     #[command(
         after_help = "Examples:\n  codex-vault restore SESSION_ID --list\n  codex-vault restore SESSION_ID --original\n  codex-vault restore SESSION_ID --to C:\\backups\\recorded-snapshot.jsonl.zst\n\nCopy --to paths from --list. Restore saves the current transcript before replacing it."
@@ -228,6 +247,19 @@ enum Command {
         /// List every recovery anchor for this session instead of restoring.
         #[arg(long)]
         list: bool,
+    },
+    /// Restore every page from the exact pre-operation state of the latest chain transaction.
+    #[command(
+        name = "restore-conversation",
+        after_help = "Examples:\n  codex-vault restore-conversation THREAD_ID\n  codex-vault restore-conversation codex://threads/THREAD_ID\n\nThe current complete chain is snapshotted before replacement so the restore is itself recoverable."
+    )]
+    #[command(display_order = 8)]
+    RestoreConversation {
+        /// Thread ID, codex://threads/ reference, filename stem or full path to any current page.
+        session: String,
+        /// Limit discovery to related project paths.
+        #[arg(long)]
+        cwd: Option<String>,
     },
     /// Remove leftover scratch files, and optionally backups the manifest does not reference.
     #[command(
@@ -362,6 +394,20 @@ fn run(command: Command, batch: BatchOptions) -> Result<Value> {
             },
             batch,
         ),
+        Command::CompactConversation {
+            session,
+            cwd,
+            dry_run,
+            scan_window,
+        } => compact_conversation_command(
+            session,
+            cwd,
+            CompactOptions {
+                dry_run,
+                scan_window,
+                allow_spawned_threads: false,
+            },
+        ),
         Command::Prune {
             session,
             cwd,
@@ -375,6 +421,7 @@ fn run(command: Command, batch: BatchOptions) -> Result<Value> {
             to,
             list,
         } => restore_command(session, cwd, original, to, list),
+        Command::RestoreConversation { session, cwd } => restore_conversation_command(session, cwd),
         Command::Doctor {
             session,
             session_flag,

@@ -1,6 +1,7 @@
 //! Thin CLI-facing wrappers that turn operations into JSON documents.
 
 use crate::analysis::analyze_session_within;
+use crate::chain::{compact_conversation, restore_conversation};
 use crate::discovery::{
     discover_sessions, discover_sessions_scoped, parse_filter, resolve_session_reference,
     FilterScope,
@@ -170,6 +171,15 @@ pub fn compact_safe_command(
     Ok(json!({"sessions": rows}))
 }
 
+pub fn compact_conversation_command(
+    session: String,
+    cwd_filter: Option<String>,
+    options: CompactOptions,
+) -> Result<Value> {
+    let filter = parse_filter(cwd_filter)?;
+    compact_conversation(&session, filter.as_deref(), options)
+}
+
 pub fn restore_command(
     session: String,
     cwd_filter: Option<String>,
@@ -188,6 +198,11 @@ pub fn restore_command(
         (false, None) => RestoreTarget::Latest,
     };
     Ok(json!(restore_impl(&path, target)?))
+}
+
+pub fn restore_conversation_command(session: String, cwd_filter: Option<String>) -> Result<Value> {
+    let filter = parse_filter(cwd_filter)?;
+    restore_conversation(&session, filter.as_deref())
 }
 
 pub fn doctor_command(

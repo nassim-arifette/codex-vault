@@ -9,7 +9,7 @@ use crate::rollout::{
     SessionIdSource,
 };
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -146,6 +146,179 @@ pub struct LineageSuccessor {
     pub path: PathBuf,
     /// Byte offset into the *source* page that this one continues from.
     pub end_byte_offset: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ConversationPage {
+    pub path: PathBuf,
+    pub page_id: String,
+    pub size_bytes: u64,
+    pub predecessor_page_id: Option<String>,
+    pub predecessor_end_byte_offset: Option<u64>,
+    pub predecessor_end_ordinal_exclusive: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ConversationChain {
+    pub session_id: String,
+    /// Root-to-leaf order. This first implementation intentionally accepts only a single linear
+    /// dependency chain; forks and ambiguous layouts are refused before mutation.
+    pub pages: Vec<ConversationPage>,
+}
+
+/// Resolve every discovered rollout for a conversation and prove that its pagination graph is a
+/// single complete linear chain. This is deliberately stricter than `lineage_successors`: a
+/// whole-conversation mutation must know the complete dependency closure before it writes bytes.
+pub fn resolve_conversation_chain(
+    reference: &str,
+    cwd_filter: Option<&Path>,
+) -> Result<ConversationChain> {
+    let session_id = if let Some(raw) = reference.strip_prefix("codex://threads/") {
+        raw.trim_matches('/').to_string()
+    } else {
+        let as_path = Path::new(reference);
+        if as_path.exists() {
+            read_session_head(as_path)?.session_id
+        } else {
+            let wanted = as_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(strip_rollout_extension)
+                .unwrap_or(reference);
+            let matches: Vec<_> = discover_sessions(cwd_filter)?
+                .into_iter()
+                .filter(|s| s.session_id == wanted || s.file_stem == wanted)
+                .collect();
+            if matches.is_empty() {
+                return Err(VaultError::SessionNotFound {
+                    reference: reference.to_string(),
+                });
+            }
+            let ids: HashSet<_> = matches.iter().map(|s| s.session_id.as_str()).collect();
+            if ids.len() != 1 {
+                return Err(VaultError::AmbiguousSession {
+                    reference: reference.to_string(),
+                    matches: matches.into_iter().map(|s| s.path).collect(),
+                });
+            }
+            matches[0].session_id.clone()
+        }
+    };
+
+    let sessions: Vec<_> = discover_sessions(cwd_filter)?
+        .into_iter()
+        .filter(|s| s.session_id == session_id)
+        .collect();
+    if sessions.is_empty() {
+        return Err(VaultError::SessionNotFound {
+            reference: reference.to_string(),
+        });
+    }
+
+    let mut by_id: HashMap<String, ConversationPage> = HashMap::new();
+    for info in sessions {
+        let head = read_session_head(&info.path)?;
+        if by_id.contains_key(&head.page_id) {
+            return Err(VaultError::InvalidInput {
+                reason: format!(
+                    "conversation `{session_id}` has more than one rollout with page id `{}`",
+                    head.page_id
+                ),
+            });
+        }
+        let base = head.provenance.history_base.as_ref();
+        by_id.insert(
+            head.page_id.clone(),
+            ConversationPage {
+                path: info.path,
+                page_id: head.page_id,
+                size_bytes: info.size_bytes,
+                predecessor_page_id: base.and_then(|b| b.thread_id.clone()),
+                predecessor_end_byte_offset: base.and_then(|b| b.end_byte_offset),
+                predecessor_end_ordinal_exclusive: base.and_then(|b| b.end_ordinal_exclusive),
+            },
+        );
+    }
+
+    let roots: Vec<_> = by_id
+        .values()
+        .filter(|p| p.predecessor_page_id.is_none())
+        .map(|p| p.page_id.clone())
+        .collect();
+    if roots.len() != 1 {
+        return Err(VaultError::InvalidInput {
+            reason: format!(
+                "conversation `{session_id}` must have exactly one pagination root; found {}",
+                roots.len()
+            ),
+        });
+    }
+
+    let mut next: HashMap<String, String> = HashMap::new();
+    for page in by_id.values() {
+        let Some(parent) = page.predecessor_page_id.as_ref() else {
+            continue;
+        };
+        if !by_id.contains_key(parent) {
+            return Err(VaultError::InvalidInput {
+                reason: format!(
+                    "conversation `{session_id}` is incomplete: page `{}` depends on missing page `{parent}`",
+                    page.page_id
+                ),
+            });
+        }
+        if page.predecessor_end_byte_offset.is_none()
+            || page.predecessor_end_ordinal_exclusive.is_none()
+        {
+            return Err(VaultError::InvalidInput {
+                reason: format!(
+                    "conversation `{session_id}` page `{}` has an incomplete history_base boundary",
+                    page.page_id
+                ),
+            });
+        }
+        if let Some(existing) = next.insert(parent.clone(), page.page_id.clone()) {
+            return Err(VaultError::InvalidInput {
+                reason: format!(
+                    "conversation `{session_id}` forks at page `{parent}` into `{existing}` and `{}`; fork compaction is not yet proven safe",
+                    page.page_id
+                ),
+            });
+        }
+    }
+
+    let mut ordered = Vec::with_capacity(by_id.len());
+    let mut seen = HashSet::new();
+    let mut current = roots[0].clone();
+    loop {
+        if !seen.insert(current.clone()) {
+            return Err(VaultError::InvalidInput {
+                reason: format!("conversation `{session_id}` contains a pagination cycle"),
+            });
+        }
+        ordered.push(
+            by_id
+                .get(&current)
+                .expect("page id from validated graph")
+                .clone(),
+        );
+        match next.get(&current) {
+            Some(n) => current = n.clone(),
+            None => break,
+        }
+    }
+    if ordered.len() != by_id.len() {
+        return Err(VaultError::InvalidInput {
+            reason: format!(
+                "conversation `{session_id}` contains disconnected or cyclic pagination dependencies"
+            ),
+        });
+    }
+
+    Ok(ConversationChain {
+        session_id,
+        pages: ordered,
+    })
 }
 
 impl LineageSuccessor {

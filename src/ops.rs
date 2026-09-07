@@ -241,6 +241,78 @@ fn open_journal(vault: &VaultPaths, path: &Path, session_id: &str) -> Result<Jou
     })
 }
 
+/// Record one page participating in a whole-conversation transaction. The recovery anchor is
+/// written before any native page is replaced so ordinary `doctor`, `restore --list`, indexing
+/// and MCP all keep seeing the archived history even though the transaction itself spans files.
+pub(crate) fn prepare_chain_page_manifest(path: &Path, anchor: &RecoveryAnchor) -> Result<PathBuf> {
+    let vault = ensure_vault_paths()?;
+    let head = read_session_head(path)?;
+    let session_id = head.session_id.clone();
+    let journal = open_journal(&vault, path, &session_id)?;
+    let original = journal
+        .manifest
+        .as_ref()
+        .map(|m| m.original.clone())
+        .unwrap_or_else(|| anchor.clone());
+    let mut manifest = manifest_for(
+        ManifestDraft {
+            session_id: &session_id,
+            head: &head,
+            path,
+            mode: Mode::CompactConversation,
+            original: &original,
+            restore: anchor,
+            result_size: anchor.source_size,
+            result_sha256: &anchor.source_sha256,
+            notes: vec!["whole-conversation compaction transaction prepared".to_string()],
+        },
+        journal.manifest.clone(),
+    );
+    manifest.status = Status::Prepared;
+    manifest.committed_at = None;
+    manifest.record(
+        now_iso_utc(),
+        "compact-conversation",
+        "prepared",
+        Some(anchor.clone()),
+        Some("exact pre-operation page captured for coordinated transaction".to_string()),
+    );
+    write_manifest(&journal.key, &vault, &manifest)
+}
+
+pub(crate) fn commit_chain_page_manifest(
+    path: &Path,
+    result_size: u64,
+    result_sha256: &str,
+    removed_bytes: u64,
+) -> Result<PathBuf> {
+    let vault = ensure_vault_paths()?;
+    let head = read_session_head(path)?;
+    let session_id = head.session_id.clone();
+    let journal = open_journal(&vault, path, &session_id)?;
+    let mut manifest = journal.manifest.ok_or(VaultError::Internal {
+        detail: "chain page commit without prepared manifest",
+    })?;
+    manifest.mode = Mode::CompactConversation;
+    manifest.status = Status::Ok;
+    manifest.committed_at = Some(now_iso_utc());
+    manifest.result_size = result_size;
+    manifest.result_sha256 = result_sha256.to_string();
+    manifest.record(
+        now_iso_utc(),
+        "compact-conversation",
+        "committed",
+        None,
+        Some(format!(
+            "{} removed from this page",
+            format_size(removed_bytes)
+        )),
+    );
+    let file = write_manifest(&journal.key, &vault, &manifest)?;
+    let _ = write_summary(&journal.key, &vault, &manifest);
+    Ok(file)
+}
+
 /// Carry forward an existing journal, or build a fresh one describing the state we just captured.
 ///
 /// Reusing the existing manifest is what keeps a session's history in one document; an earlier

@@ -9,6 +9,82 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::Path;
 
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct VaultStorageBreakdown {
+    pub total_bytes: u64,
+    pub backup_bytes: u64,
+    pub metadata_bytes: u64,
+    pub index_bytes: u64,
+}
+
+/// Split Vault storage into retained recovery archives, the optional SQLite index (including WAL
+/// sidecars) and the remaining recovery metadata/journals. These are logical file bytes.
+pub fn vault_storage_breakdown(vault: &VaultPaths) -> Result<VaultStorageBreakdown> {
+    let total_bytes = directory_bytes(&vault.root)?;
+    let backup_bytes = directory_bytes(&vault.backups)?;
+    let mut index_bytes = 0u64;
+    if vault.root.is_dir() {
+        for entry in fs::read_dir(&vault.root)? {
+            let path = entry?.path();
+            if path.is_file()
+                && path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n == "index.sqlite" || n.starts_with("index.sqlite-"))
+            {
+                index_bytes = index_bytes.saturating_add(fs::metadata(path)?.len());
+            }
+        }
+    }
+    Ok(VaultStorageBreakdown {
+        total_bytes,
+        backup_bytes,
+        index_bytes,
+        metadata_bytes: total_bytes
+            .saturating_sub(backup_bytes)
+            .saturating_sub(index_bytes),
+    })
+}
+
+/// Best-effort process lifetime peak resident memory. Chain reports use this instead of a current
+/// RSS sample so a short-lived spike during compression/rewrite cannot be hidden by measuring late.
+#[cfg(windows)]
+pub fn process_peak_rss_bytes() -> Option<u64> {
+    use windows_sys::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    let mut counters = PROCESS_MEMORY_COUNTERS {
+        cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        ..Default::default()
+    };
+    let ok = unsafe {
+        K32GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            &mut counters,
+            std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        )
+    };
+    (ok != 0).then_some(counters.PeakWorkingSetSize as u64)
+}
+
+#[cfg(target_os = "linux")]
+pub fn process_peak_rss_bytes() -> Option<u64> {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
+    let ok = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
+    if ok != 0 {
+        return None;
+    }
+    let usage = unsafe { usage.assume_init() };
+    Some((usage.ru_maxrss as u64).saturating_mul(1024))
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn process_peak_rss_bytes() -> Option<u64> {
+    None
+}
+
 pub fn directory_bytes(path: &Path) -> Result<u64> {
     if !path.exists() {
         return Ok(0);
