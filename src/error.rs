@@ -296,7 +296,10 @@ impl fmt::Display for VaultError {
                 path.display()
             ),
             VaultError::SessionChanged { stage } => {
-                write!(f, "session changed during {stage}; the transcript was not modified")
+                write!(
+                    f,
+                    "session changed during {stage}; Vault did not replace the transcript"
+                )
             }
             VaultError::IntegrityMismatch {
                 what,

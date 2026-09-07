@@ -32,9 +32,9 @@ pub fn create_verified_backup(src: &Path, target: &Path) -> Result<RecoveryAncho
 /// Compress `src` into `target`, proving the archive decodes back to what was read.
 ///
 /// `expected_source_sha` is the hash a caller already computed while reading the transcript for
-/// another purpose. Supplying it turns the concurrent-write check into a comparison against that
-/// earlier read instead of a second full pass over the file — the same guarantee, one fewer
-/// traversal of what may be several gigabytes.
+/// another purpose. Supplying it makes that earlier state part of the concurrency check. The
+/// source is still re-hashed after compression so an append immediately after the compressor
+/// observes EOF cannot slip through on platforms without mandatory writer exclusion.
 pub fn create_verified_backup_of(
     src: &Path,
     target: &Path,
@@ -46,9 +46,14 @@ pub fn create_verified_backup_of(
         .map_err(|e| VaultError::io("reading session size", src, e))?
         .len();
     let input_sha = compress_file_with_input_sha(src, temp.path(), 3)?;
+    crate::util::test_abort("backup_created");
+    crate::util::test_io_fail("backup_write")
+        .map_err(|e| VaultError::io("writing backup", temp.path(), e))?;
+    crate::util::test_pause("backup");
+    let final_source_sha = sha256_file(src)?;
     let unchanged = match expected_source_sha {
-        Some(expected) => expected == input_sha,
-        None => sha256_file(src)? == input_sha,
+        Some(expected) => expected == input_sha && expected == final_source_sha,
+        None => final_source_sha == input_sha,
     };
     if !unchanged {
         return Err(VaultError::SessionChanged {
@@ -64,6 +69,7 @@ pub fn create_verified_backup_of(
         ));
     }
     let compressed_sha = sha256_file(temp.path())?;
+    crate::util::test_abort("backup_verified");
     temp.commit_onto(target)?;
     Ok(RecoveryAnchor {
         backup_path: target.to_path_buf(),

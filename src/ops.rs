@@ -8,7 +8,8 @@ use crate::backup::{
 use crate::discovery::lineage_successors;
 use crate::error::{Result, VaultError};
 use crate::fsatomic::{
-    copy_compacted_transcript, lock_session, stale_temp_files, MutationGuard, TempFile,
+    copy_compacted_transcript, file_identity, lock_session, path_file_identity, stale_temp_files,
+    FileIdentity, MutationGuard, TempFile,
 };
 use crate::hashing::{decompress_file, sha256_file, sha256_rollout_prefix};
 use crate::manifest::{
@@ -479,9 +480,10 @@ pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<Co
     } else {
         Some(MutationGuard::acquire(&vault.root, path)?)
     };
-    let _source_lock = lock_session(path)?;
+    let source_lock = lock_session(path)?;
+    let source_identity = file_identity(&source_lock)?;
     let before = crate::storage::StorageSnapshot::read(path, &vault)?;
-    let mut result = compact_locked(path, options, &vault)?;
+    let mut result = compact_locked(path, options, &vault, source_identity)?;
     if !options.dry_run {
         match crate::storage::StorageSnapshot::read(path, &vault) {
             Ok(after) => {
@@ -506,6 +508,7 @@ fn compact_locked(
     path: &Path,
     options: CompactOptions,
     vault: &VaultPaths,
+    source_identity: FileIdentity,
 ) -> Result<CommandResult> {
     let head = read_session_head(path)?;
     if head.provenance.is_spawned_thread() && !options.allow_spawned_threads {
@@ -616,8 +619,8 @@ fn compact_locked(
         });
     }
 
-    // The analysis pass already hashed the transcript; the backup proves that same content is
-    // now durably captured, so neither step needs another traversal of the file.
+    // The analysis pass establishes the expected source hash. Backup creation compresses that
+    // state and then re-hashes the live source once more to close the append-after-EOF race.
     let backup = ensure_backup_for_compaction(
         path,
         &journal.key,
@@ -642,6 +645,9 @@ fn compact_locked(
 
     let compact_tmp = TempFile::beside(path, "compact");
     let copy = copy_compacted_transcript(path, compact_tmp.path(), session_meta, cutoff)?;
+    crate::util::test_abort("compact_temp_written");
+    crate::util::test_io_fail("compact_temp_write")
+        .map_err(|e| VaultError::io("writing compact temp", compact_tmp.path(), e))?;
     let (kept_lines, removed_lines, kept_bytes, removed_bytes) = (
         copy.kept_lines,
         copy.removed_lines,
@@ -652,6 +658,11 @@ fn compact_locked(
     if copy.source_sha256 != current_input_sha {
         return Err(VaultError::SessionChanged {
             stage: "compaction",
+        });
+    }
+    if sha256_file(path)? != current_input_sha {
+        return Err(VaultError::SessionChanged {
+            stage: "compaction output verification",
         });
     }
 
@@ -734,11 +745,25 @@ fn compact_locked(
         );
     }
 
+    crate::util::test_pause("pre_replace");
+    if path_file_identity(path)? != source_identity {
+        return Err(VaultError::SessionChanged {
+            stage: "pre-replacement source identity verification",
+        });
+    }
+    if sha256_file(path)? != current_input_sha {
+        return Err(VaultError::SessionChanged {
+            stage: "pre-replacement verification",
+        });
+    }
+
     // Persist the recovery journal *before* the destructive rename. If the process dies after
     // this point, `restore` still knows the exact pre-compaction backup to materialize.
     let manifest_file = write_manifest(&journal.key, vault, &manifest)?;
+    crate::util::test_abort("prepared_journal_written");
 
     let _replacement_lock = compact_tmp.replace_locked(path)?;
+    crate::util::test_abort("atomic_replacement");
     let recovery_manifest = manifest_file.clone();
     (|| {
         let (active_ok, active_issues) = verify_jsonl(path)?;
@@ -806,6 +831,7 @@ fn compact_locked(
                 result_size,
             ));
         }
+        crate::util::test_abort("post_replacement_verified");
 
         manifest.status = Status::Ok;
         manifest.committed_at = Some(now_iso_utc());
@@ -820,6 +846,7 @@ fn compact_locked(
             )),
         );
         let manifest_file = write_manifest(&journal.key, vault, &manifest)?;
+        crate::util::test_abort("final_journal_commit");
         let _ = write_summary(&journal.key, vault, &manifest);
 
         Ok(CommandResult {
@@ -975,6 +1002,7 @@ pub fn restore_impl(path: &Path, target: RestoreTarget) -> Result<CommandResult>
             stats: json!({}),
         });
     }
+    crate::util::test_abort("restore_temp_written");
     let mut m = manifest.ok_or(VaultError::Internal {
         detail: "restore anchor without manifest",
     })?;
@@ -993,7 +1021,9 @@ pub fn restore_impl(path: &Path, target: RestoreTarget) -> Result<CommandResult>
         m.restore = anchor.clone();
     }
     write_manifest(&journal.key, &vault, &m)?;
+    crate::util::test_abort("prepared_journal_written");
     let _replacement_lock = temp.replace_locked(path)?;
+    crate::util::test_abort("atomic_replacement");
     let recovery_manifest = manifest_file.clone();
     (|| {
     let active_sha = sha256_file(path)?;
@@ -1001,6 +1031,7 @@ pub fn restore_impl(path: &Path, target: RestoreTarget) -> Result<CommandResult>
     if active_sha != anchor.source_sha256 || active_size != anchor.source_size {
         return Err(VaultError::mismatch("restored transcript after replacement", &anchor.source_sha256, &active_sha));
     }
+    crate::util::test_abort("post_replacement_verified");
     {
         m.last_restored_at = Some(now_iso_utc());
         m.last_restore_sha256 = Some(restored_sha.clone());
@@ -1021,6 +1052,7 @@ pub fn restore_impl(path: &Path, target: RestoreTarget) -> Result<CommandResult>
         m.status = Status::Ok;
         m.committed_at = Some(now_iso_utc());
         write_manifest(&journal.key, &vault, &m)?;
+        crate::util::test_abort("final_journal_commit");
         let _ = write_summary(&journal.key, &vault, &m);
     }
 

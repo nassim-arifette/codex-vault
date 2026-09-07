@@ -22,6 +22,7 @@ import time
 GB = 1_000_000_000
 MARKER = "codex-vault-generated-benchmark-v1"
 PROBE = "Historical benchmark sentinel: café 🦀 rotating refresh tokens."
+INCREMENTAL_PROBE = "Incremental benchmark sentinel: refreshed index source."
 STAMP = "2026-01-01T00:00:00.000Z"
 
 
@@ -211,7 +212,17 @@ def run_case(binary, root, gb, seed):
     compact_storage = storage(session, runner.vault)
     runner.run("doctor", "doctor", target)
     runner.run("doctor_compacted_deep", "doctor", target, "--deep")
-    runner.run("index", "index")
+    index_report = runner.run("index", "index")
+    incremental_noop = runner.run("index_incremental_noop", "index")
+    assert incremental_noop["updated_sources"] == 0
+    with session.open("ab") as stream:
+        stream.write((json.dumps(dict(timestamp=STAMP, type="event_msg", payload=dict(
+            type="user_message", message=INCREMENTAL_PROBE, images=[], local_images=[], text_elements=[])),
+            ensure_ascii=False, separators=(",", ":")) + "\n").encode())
+    incremental_refresh = runner.run("index_incremental_refresh", "index")
+    assert incremental_refresh["updated_sources"] == 1
+    incremental_matches = runner.run("search_incremental", "search", "Incremental benchmark sentinel")
+    assert len(incremental_matches["matches"]) == 1
     matches = runner.run("search", "search", "Historical benchmark sentinel")
     assert len(matches["matches"]) == 1
     passage = matches["matches"][0]["id"]
@@ -224,9 +235,29 @@ def run_case(binary, root, gb, seed):
     runner.run("index_restored", "index")
     assert runner.run("read_restored", "read", passage)["text"] == PROBE
     indexed_storage = next(op["storage_after"] for op in runner.metrics if op["operation"] == "index")
+    operations = {op["operation"]: op for op in runner.metrics}
     result = dict(requested_gb=gb, generated=generated, operations=runner.metrics, passed=True,
                   restored_sha256=restored_hash, compact_storage=compact_storage,
                   indexed_storage=indexed_storage,
+                  index_scalability=dict(
+                      sources=index_report["sources"], passages=index_report["passages"],
+                      occurrences=index_report["occurrences"], indexed_text_bytes=index_report["indexed_text_bytes"],
+                      duplicate_occurrences_without_duplicate_body=index_report["duplicate_occurrences_without_duplicate_body"],
+                      deduplication_ratio=index_report["deduplication_ratio"],
+                      index_to_indexed_text_ratio=index_report["index_to_indexed_text_ratio"],
+                      initial_index_bytes=index_report["index_bytes"],
+                      creation_seconds=operations["index"]["seconds"],
+                      creation_peak_ram_bytes=operations["index"]["peak_ram_bytes"],
+                      incremental_noop_seconds=operations["index_incremental_noop"]["seconds"],
+                      incremental_noop_updated_sources=incremental_noop["updated_sources"],
+                      incremental_refresh_seconds=operations["index_incremental_refresh"]["seconds"],
+                      incremental_refresh_peak_ram_bytes=operations["index_incremental_refresh"]["peak_ram_bytes"],
+                      incremental_refresh_updated_sources=incremental_refresh["updated_sources"],
+                      index_bytes_after_incremental_refresh=incremental_refresh["index_bytes"],
+                      search_seconds=operations["search"]["seconds"],
+                      read_seconds=operations["read"]["seconds"],
+                      verified_read=True,
+                      verified_reference_kind=read["verified_reference"]["kind"]),
                   net_saved_after_index_bytes=generated["bytes"] - indexed_storage["total_bytes"],
                   net_saved_after_index_percent=100 * (1 - indexed_storage["total_bytes"] / generated["bytes"]),
                   backup_compression_ratio=compact_storage["backup_bytes"] / generated["bytes"],
@@ -262,6 +293,26 @@ def markdown(report):
         lines += ["", f"## {case['requested_gb']:g} GB", "", "| Operation | Seconds | Peak RAM (MB) | Read (GB) | Written (GB) |", "| --- | ---: | ---: | ---: | ---: |"]
         for op in case["operations"]:
             lines.append(f"| {op['operation']} | {op['seconds']:.3f} | {op['peak_ram_bytes']/1e6:.1f} | {op['approximate_read_bytes']/GB:.3f} | {op['approximate_write_bytes']/GB:.3f} |")
+        scale = case["index_scalability"]
+        lines += ["", "### FTS index", "",
+                  "| Metric | Result |", "| --- | ---: |",
+                  f"| Creation | {scale['creation_seconds']:.3f} s |",
+                  f"| Creation peak RAM | {scale['creation_peak_ram_bytes']/1e6:.1f} MB |",
+                  f"| Incremental refresh (1 changed source) | {scale['incremental_refresh_seconds']:.3f} s |",
+                  f"| Incremental refresh peak RAM | {scale['incremental_refresh_peak_ram_bytes']/1e6:.1f} MB |",
+                  f"| Incremental no-op refresh | {scale['incremental_noop_seconds']:.3f} s |",
+                  f"| Search latency | {scale['search_seconds']:.3f} s |",
+                  f"| Verified read latency | {scale['read_seconds']:.3f} s |",
+                  f"| index.sqlite | {scale['initial_index_bytes']/1e6:.3f} MB |",
+                  f"| Indexed text | {scale['indexed_text_bytes']/1e6:.3f} MB |",
+                  f"| Index / indexed text | {scale['index_to_indexed_text_ratio']:.3f}x |",
+                  f"| Sources | {scale['sources']} |",
+                  f"| Passages | {scale['passages']} |",
+                  f"| Occurrences | {scale['occurrences']} |",
+                  f"| Deduplicated occurrences | {scale['deduplication_ratio']:.2%} |",
+                  "",
+                  f"Verified backing-source read: {'PASS' if scale['verified_read'] else 'FAIL'} ({scale['verified_reference_kind']}).",
+                  f"Duplicate occurrences stored without duplicate passage bodies: {scale['duplicate_occurrences_without_duplicate_body']}."]
     return "\n".join(lines) + "\n"
 
 
@@ -281,13 +332,14 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     version = subprocess.check_output([str(binary), "--version"], text=True).strip()
-    report = dict(schema_version=1, complete=False, requested_sizes_gb=args.sizes_gb,
+    report = dict(schema_version=2, complete=False, requested_sizes_gb=args.sizes_gb,
                   vault_version=version, binary_sha256=digest(binary), system=hardware(),
                   generator=dict(seed=args.seed, python=platform.python_version(), entropy_fraction=0.35, live_tail_fraction=0.01),
                   measurement=dict(ram="Windows PeakWorkingSetSize of each CLI process; excludes generator and child processes",
                                    io="Windows process IO transfer counters: logical I/O, not physical device traffic",
                                    disk="Logical file lengths; temporary disk usage sampled every 200 ms",
-                                   cache="Warm/OS-managed cache; no cache flush; sequential operations; one worker"), cases=[])
+                                   cache="Warm/OS-managed cache; no cache flush; sequential operations; one worker",
+                                   latency="Wall-clock CLI process latency, including process startup and source verification"), cases=[])
     for index, size in enumerate(args.sizes_gb):
         required = int(size * GB * 1.4 + 2 * GB)
         if shutil.disk_usage(output).free < required:

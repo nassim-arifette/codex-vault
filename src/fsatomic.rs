@@ -15,6 +15,52 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Suffix shared by every temporary file the vault creates, so leftovers are identifiable.
 pub const TEMP_SUFFIX: &str = ".tmp";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileIdentity {
+    device: u64,
+    file: u64,
+}
+
+#[cfg(unix)]
+pub fn file_identity(file: &File) -> Result<FileIdentity> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = file.metadata()?;
+    Ok(FileIdentity {
+        device: metadata.dev(),
+        file: metadata.ino(),
+    })
+}
+
+#[cfg(windows)]
+pub fn file_identity(file: &File) -> Result<FileIdentity> {
+    use std::mem::MaybeUninit;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+
+    let mut info = MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), info.as_mut_ptr()) };
+    if ok == 0 {
+        return Err(VaultError::io(
+            "reading transcript file identity",
+            Path::new("<open transcript>"),
+            io::Error::last_os_error(),
+        ));
+    }
+    let info = unsafe { info.assume_init() };
+    Ok(FileIdentity {
+        device: info.dwVolumeSerialNumber as u64,
+        file: ((info.nFileIndexHigh as u64) << 32) | info.nFileIndexLow as u64,
+    })
+}
+
+pub fn path_file_identity(path: &Path) -> Result<FileIdentity> {
+    let file =
+        File::open(path).map_err(|e| VaultError::io("opening transcript identity", path, e))?;
+    file_identity(&file)
+}
+
 /// Create sensitive output privately from the first byte, independently of the user's umask.
 pub fn create_private_file(path: &Path) -> std::io::Result<File> {
     let mut options = OpenOptions::new();
@@ -429,14 +475,23 @@ pub fn stale_temp_files(dir: &Path, stem: &str) -> Vec<PathBuf> {
 #[cfg(windows)]
 pub fn lock_session(path: &Path) -> Result<File> {
     use std::os::windows::fs::OpenOptionsExt;
-    use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_DELETE, FILE_SHARE_READ};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    };
 
     // Deny other writers at the OS sharing layer while still permitting readers and
     // ReplaceFileW. If Codex already has a write handle open, this open should fail
     // with a sharing violation before we touch the transcript.
+    let share_mode = if cfg!(debug_assertions)
+        && std::env::var_os("CODEX_VAULT_TEST_ALLOW_WRITER_RACES").is_some()
+    {
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
+    } else {
+        FILE_SHARE_READ | FILE_SHARE_DELETE
+    };
     let file = OpenOptions::new()
         .read(true)
-        .share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
+        .share_mode(share_mode)
         .open(path)
         .map_err(|source| VaultError::SessionLocked {
             path: path.to_path_buf(),
@@ -691,6 +746,7 @@ pub fn copy_compacted_transcript(
         }
         physical_index += 1;
     }
+    crate::util::test_pause("compact_output");
     output.flush()?;
     output.get_ref().sync_all()?;
     Ok(CompactionCopy {

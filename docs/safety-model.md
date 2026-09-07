@@ -13,7 +13,9 @@ Vault creates and verifies a recovery snapshot before replacing a native transcr
 - Windows deny-write handle acquired before reading the native transcript;
 - SHA-256 of original, compressed backup and compacted result, computed during streaming passes;
 - zstd backup is decoded and checked before any native transcript is changed;
-- the compaction pass re-hashes the source as it copies, which is what proves no concurrent write slipped in;
+- backup creation re-hashes the live source after the compressor reaches EOF, so a late append cannot be mistaken for the analyzed state;
+- the compaction pass hashes the source while copying, then the live path is hashed again after output generation and immediately before replacement;
+- the file identity captured from the locked source handle must still match the path before replacement, detecting an external inode/file replacement even when the replacement bytes are identical;
 - recovery manifest is durably written as `status: prepared` **before** the destructive rename, then committed to `status: ok` only after post-replacement hash/JSON verification;
 - temporary-file write + `sync_all()` + handle-based `FileRenameInfoEx` replacement on Windows
   10+ filesystems that support POSIX rename semantics (unsupported systems refuse the operation);
@@ -48,8 +50,11 @@ Compact and restore preserve the transcript's owner, group and Unix permission b
 to preserve ownership refuses replacement. Extended POSIX ACLs are not copied. Existing custom
 vault directories keep their directory permissions; generated contents are private.
 
-Close the relevant Codex session before compaction or restoration. Locks and hash checks protect
-the operation itself; they are not a claim that compacting actively used conversations is validated.
+Close the relevant Codex session before compaction or restoration. Windows actively refuses a
+writer-held rollout, and adversarial tests verify that changes during analysis, backup, compact
+output and the pre-replacement window are rejected without discarding appended bytes. Linux uses
+advisory locks, so active concurrent mutation remains unsupported even though the same hash and
+identity checks detect the tested race windows.
 Keep the recovery journal with its backups. SQLite is a derived search index and is not needed
 to restore a recorded state. Rebuild it with `index --rebuild` if it is lost or corrupt.
 

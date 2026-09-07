@@ -11,8 +11,8 @@ use std::path::Path;
 #[derive(Clone, Debug, Serialize)]
 pub struct CompactionAnalysis {
     pub can_compact: bool,
-    /// SHA-256 of the transcript as the analysis read it. Callers reuse this instead of paying
-    /// for another full pass, and compare it later to detect concurrent writes.
+    /// SHA-256 of the transcript as the analysis read it. Callers use this as the concurrency
+    /// baseline for later backup/copy/pre-replacement verification.
     #[serde(skip)]
     pub content_sha256: String,
     pub cutoff_index: Option<usize>,
@@ -284,7 +284,9 @@ pub fn analyze_session(path: &Path) -> Result<CompactionAnalysis> {
 /// Analyze with an explicit retention window. `usize::MAX` retains everything, which is the
 /// reference behaviour the differential tests compare against.
 pub fn analyze_session_within(path: &Path, window: usize) -> Result<CompactionAnalysis> {
-    Ok(analyze_scan(scan_rollout_metadata_within(path, window)?))
+    let scan = scan_rollout_metadata_within(path, window)?;
+    crate::util::test_pause("analysis");
+    Ok(analyze_scan(scan))
 }
 
 /// Analyze only the exact predecessor prefix consumed by a paginated successor.

@@ -417,14 +417,34 @@ pub fn status() -> Result<Value> {
     let sources: i64 = conn.query_row("SELECT count(*) FROM sources", [], |r| r.get(0))?;
     let passages: i64 = conn.query_row("SELECT count(*) FROM passages", [], |r| r.get(0))?;
     let occurrences: i64 = conn.query_row("SELECT count(*) FROM occurrences", [], |r| r.get(0))?;
+    let indexed_text_bytes: i64 = conn.query_row(
+        "SELECT coalesce(sum(length(CAST(text AS BLOB))),0) FROM passages",
+        [],
+        |r| r.get(0),
+    )?;
     let skipped: i64 = conn.query_row(
         "SELECT coalesce(sum(skipped_records),0) FROM sources",
         [],
         |r| r.get(0),
     )?;
+    let index_bytes = fs::metadata(database_path())?.len();
+    let duplicate_occurrences = occurrences.saturating_sub(passages).max(0);
+    let deduplication_ratio = if occurrences > 0 {
+        duplicate_occurrences as f64 / occurrences as f64
+    } else {
+        0.0
+    };
+    let index_to_indexed_text_ratio = if indexed_text_bytes > 0 {
+        index_bytes as f64 / indexed_text_bytes as f64
+    } else {
+        0.0
+    };
     Ok(
         json!({"status":"ok","schema_version":SCHEMA_VERSION,"sources":sources,"passages":passages,
-        "occurrences":occurrences,"skipped_oversized_records":skipped,"index_bytes":fs::metadata(database_path())?.len(),
+        "occurrences":occurrences,"duplicate_occurrences_without_duplicate_body":duplicate_occurrences,
+        "deduplication_ratio":deduplication_ratio,"indexed_text_bytes":indexed_text_bytes,
+        "index_to_indexed_text_ratio":index_to_indexed_text_ratio,
+        "skipped_oversized_records":skipped,"index_bytes":index_bytes,
         "vault_bytes":directory_bytes(&vault_paths().root)?,"coverage":"user and assistant messages; no tool payloads or instruction envelopes"}),
     )
 }

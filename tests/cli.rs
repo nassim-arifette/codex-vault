@@ -505,6 +505,53 @@ fn search_survives_compaction_reindex_corruption_rebuild_and_restore() {
 }
 
 #[test]
+fn index_deduplicates_passage_bodies_across_recovery_snapshots() {
+    let sb = CliSandbox::new();
+    sb.add_historical_message();
+    let first = sb.ok(&["index"]);
+    let passages = first["passages"].as_i64().unwrap();
+    let occurrences = first["occurrences"].as_i64().unwrap();
+    assert!(first["indexed_text_bytes"].as_i64().unwrap() > 0);
+
+    sb.ok(&["archive", "cli-test"]);
+    let with_snapshot = sb.ok(&["index"]);
+    assert_eq!(with_snapshot["sources"], 2);
+    assert_eq!(with_snapshot["passages"], passages);
+    assert!(with_snapshot["occurrences"].as_i64().unwrap() > occurrences);
+    assert_eq!(
+        with_snapshot["duplicate_occurrences_without_duplicate_body"],
+        with_snapshot["occurrences"].as_i64().unwrap() - passages
+    );
+    let expected_dedup = (with_snapshot["occurrences"].as_i64().unwrap() - passages) as f64
+        / with_snapshot["occurrences"].as_i64().unwrap() as f64;
+    assert!(
+        (with_snapshot["deduplication_ratio"].as_f64().unwrap() - expected_dedup).abs()
+            < f64::EPSILON
+    );
+    assert_eq!(
+        with_snapshot["index_bytes"].as_u64().unwrap(),
+        fs::metadata(sb.dir.path().join("vault/index.sqlite"))
+            .unwrap()
+            .len()
+    );
+    assert!(
+        with_snapshot["index_to_indexed_text_ratio"]
+            .as_f64()
+            .unwrap()
+            > 0.0
+    );
+
+    let found = sb.ok(&["search", "authentication tokens"]);
+    let id = found["matches"][0]["id"].as_str().unwrap();
+    let read = sb.ok(&["read", id]);
+    assert_eq!(
+        read["text"],
+        "Decision: authentication uses rotating refresh tokens. Café 🦀"
+    );
+    assert!(read["verified_reference"].is_object());
+}
+
+#[test]
 fn project_filters_cannot_leak_into_a_similarly_named_project() {
     let sb = CliSandbox::new();
     sb.add_historical_message();

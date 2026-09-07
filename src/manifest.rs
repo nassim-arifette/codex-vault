@@ -341,6 +341,8 @@ pub fn write_manifest(key: &VaultKey, vault: &VaultPaths, manifest: &Manifest) -
         .map_err(|e| VaultError::json("writing manifest", temp.path(), e))?;
     file.write_all(b"\n")
         .map_err(|e| VaultError::io("writing manifest", temp.path(), e))?;
+    crate::util::test_io_fail("manifest_write")
+        .map_err(|e| VaultError::io("writing manifest", temp.path(), e))?;
     file.sync_all()
         .map_err(|e| VaultError::io("flushing manifest", temp.path(), e))?;
     drop(file);

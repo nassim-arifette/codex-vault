@@ -24,6 +24,41 @@ Peak memory stayed below 28 MB in this workload; doubling input from 5 to 10 GB 
 the observed maximum from 27.0 to 27.2 MB. This demonstrates bounded memory for these
 inputs, not a guarantee for every record size or future format.
 
+### FTS scale results (INDEX-002)
+
+The same 1/5/10 GB run provides the scale baseline for full-text search. `index` is initial
+creation. `index_restored` is an incremental refresh of the existing database after restore;
+that older run changed the native source and added the pre-restore recovery snapshot, so its
+refresh timing is intentionally not presented as a one-source refresh. The schema-v2 harness
+described below now measures a separate one-changed-source refresh as well as a no-op refresh.
+
+| Input | Index create | Index peak RAM | index.sqlite | Post-restore incremental refresh | Refresh peak RAM | Search | Verified read |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 GB | 3.635 s | 23.2 MB | 8.151 MB | 11.752 s | 21.4 MB | 0.025 s | 0.269 s (PASS) |
+| 5 GB | 47.257 s | 25.2 MB | 41.353 MB | 108.001 s | 22.2 MB | 0.035 s | 1.634 s (PASS) |
+| 10 GB | 90.363 s | 26.0 MB | 82.874 MB | 183.784 s | 22.6 MB | 0.052 s | 9.849 s (PASS) |
+
+The v0.2.1 report did not yet serialize passage-text bytes or deduplication fields. Because the
+fixture is deterministic and the v0.2.1 index already used the same passage identity and
+occurrence schema, those corpus values can be reconstructed exactly from the recorded turn counts
+and the 99% checkpoint/live-tail boundary. The 0.02 GB schema-v2 smoke test reproduces the same
+calculation exactly (257 passages, 388 occurrences, 13,542 indexed text bytes), and new benchmark
+runs emit these values directly instead of relying on reconstruction. For this fixture, unique
+passages are `1 + 2 × turns`; occurrences are `1 + 3 × turns + 3 × live-tail turns`. The recorded
+1/5/10 GB cases have 56/313/641 turns after the 99% checkpoint, respectively.
+
+| Input | Sources | Unique passages | Occurrences | Deduplicated occurrences | Indexed text | Index / indexed text |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 GB | 2 | 12,793 | 19,357 | 33.91% | 0.695 MB | 11.728x |
+| 5 GB | 2 | 64,017 | 96,964 | 33.98% | 3.531 MB | 11.712x |
+| 10 GB | 2 | 128,059 | 194,011 | 33.99% | 7.085 MB | 11.697x |
+
+The nearly flat 23.2–26.0 MB initial-index peak demonstrates that index construction memory did
+not scale with the 1→10 GB archive size in this tool-heavy workload. Search remained below 60 ms.
+Verified `read` remained correct at every size, but it deliberately hashes a backing source before
+returning text; the 10 GB case therefore took 9.849 s. That integrity cost is reported rather than
+hidden as an FTS lookup latency.
+
 The timing variation, including the faster 10 GB compaction than 5 GB compaction, is from
 this single ordinary-desktop run with an OS-managed cache. It should not be read as a
 comparative throughput result. The 20 GB option is implemented but was not run locally.
@@ -55,10 +90,13 @@ in full-text search. A corpus dominated by long message text may have different 
 time and storage costs from this tool-heavy workload.
 
 The sequence measures scan, analyze, archive, deep archive verification, compact dry run,
-compact, doctor, deep compact verification, index, search, verified read, restore, final
+compact, doctor, deep compact verification, index creation, an unchanged incremental index
+refresh, a one-source changed incremental refresh, search, verified read, restore, final
 deep doctor, refreshed index and another verified read. Restore must match the generator's
 SHA-256 exactly. Search must retrieve a historical sentinel from a verified backup after
-its native prefix is removed, and retrieve the same text again after restoration.
+its native prefix is removed, and retrieve the same text again after restoration. The changed
+refresh appends one generated dialogue record after compaction, verifies that exactly one source
+is reindexed, and verifies the newly indexed sentinel before the exact-original restore.
 
 The run exports `report.json`, `report.md` and per-operation metrics under ignored
 `validation/`. Each command records elapsed time, Windows peak working set, native input
@@ -67,6 +105,14 @@ sampled temporary storage. The case summary includes backup compression ratio an
 net savings. `--keep-data` retains generated rollouts and backups; otherwise only the
 generator's own marked data trees are removed after successful verification. Failed runs
 retain their data and logs. Never treat an incomplete report as a successful size test.
+
+For INDEX-002, schema-v2 reports also include an `index_scalability` object per size with the
+index creation time and peak RAM, no-op and one-changed-source incremental refresh times, exact
+`index.sqlite` bytes, source/passage/occurrence counts, indexed passage-text bytes, duplicate
+occurrences avoided by passage-body deduplication, deduplication ratio, index/indexed-text ratio,
+search latency, verified-read latency, and the kind of backing source successfully verified.
+The Markdown report renders the same fields as a dedicated FTS table, so the 1/5/10 GB acceptance
+checks do not require reconstructing metrics from the generic operation list.
 
 The disk check reserves 1.4 times the target size plus 2 GB for this generator's compression
 profile. A 20 GB run therefore requires at least 30 GB free. This is not a general capacity

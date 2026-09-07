@@ -17,9 +17,11 @@ use codex_vault::paths::{ensure_vault_paths, manifest_path, VaultKey};
 use codex_vault::rollout::DEFAULT_SCAN_WINDOW;
 use serde_json::{json, Value};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 // ---------------------------------------------------------------------------- harness
@@ -122,6 +124,108 @@ fn append_jsonl(path: &Path, lines: &[Value]) {
     fs::write(path, body).unwrap();
 }
 
+fn run_crash_stage(sb: &Sandbox, args: &[&str], stage: &str) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_codex-vault"))
+        .args(args)
+        .env("CODEX_HOME", sb.dir.path().join("codex"))
+        .env("CODEX_VAULT_HOME", sb.vault())
+        .env("CODEX_VAULT_TEST_ABORT_STAGE", stage)
+        .output()
+        .unwrap()
+}
+
+fn run_io_failure(sb: &Sandbox, path: &Path, stage: &str, error: &str) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_codex-vault"))
+        .args(["--json", "--no-progress", "compact", path.to_str().unwrap()])
+        .env("CODEX_HOME", sb.dir.path().join("codex"))
+        .env("CODEX_VAULT_HOME", sb.vault())
+        .env("CODEX_VAULT_TEST_IO_FAIL_STAGE", stage)
+        .env("CODEX_VAULT_TEST_IO_ERROR", error)
+        .output()
+        .unwrap()
+}
+
+fn cli_error(output: &std::process::Output) -> Value {
+    serde_json::from_slice(&output.stderr).unwrap_or_else(|error| {
+        panic!(
+            "expected JSON CLI error, got parse error {error}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+    })
+}
+
+fn assert_manifest_has_no_temp_anchor(path: &Path) {
+    let key = VaultKey::for_rollout(path);
+    let vault = ensure_vault_paths().unwrap();
+    let manifest_file = manifest_path(&vault, &key);
+    if let Some(manifest) = load_manifest(&manifest_file).unwrap() {
+        assert!(manifest.anchors().iter().all(|anchor| {
+            !anchor
+                .backup_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".tmp"))
+        }));
+    }
+}
+
+fn append_race_marker(path: &Path, marker: &str) -> std::io::Result<()> {
+    let mut file = fs::OpenOptions::new().append(true).open(path)?;
+    writeln!(
+        file,
+        "{}",
+        json!({"type":"event_msg","payload":{"type":"user_message","message":marker}})
+    )?;
+    file.sync_all()
+}
+
+fn run_compact_paused_at(
+    sb: &Sandbox,
+    path: &Path,
+    stage: &str,
+    allow_writer_races: bool,
+    mutate: impl FnOnce(),
+) -> Output {
+    let ready = sb.dir.path().join(format!("race-{stage}.ready"));
+    let go = sb.dir.path().join(format!("race-{stage}.continue"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_codex-vault"));
+    command
+        .args(["--json", "--no-progress", "compact", path.to_str().unwrap()])
+        .env("CODEX_HOME", sb.dir.path().join("codex"))
+        .env("CODEX_VAULT_HOME", sb.vault())
+        .env("CODEX_VAULT_TEST_PAUSE_STAGE", stage)
+        .env("CODEX_VAULT_TEST_STAGE_READY", &ready)
+        .env("CODEX_VAULT_TEST_STAGE_CONTINUE", &go)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if allow_writer_races {
+        command.env("CODEX_VAULT_TEST_ALLOW_WRITER_RACES", "1");
+    }
+    let mut child = command.spawn().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !ready.exists() {
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!("compact child exited before `{stage}` pause: {status}");
+        }
+        assert!(
+            Instant::now() < deadline,
+            "compact child never reached `{stage}` pause"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    mutate();
+    fs::write(&go, b"continue").unwrap();
+    child.wait_with_output().unwrap()
+}
+
+fn combined_output(output: &Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
 /// Every scratch file the vault could have left, anywhere it could have left one.
 fn leftover_temp_files(sandbox: &Sandbox) -> Vec<PathBuf> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -201,6 +305,145 @@ fn a_failed_compaction_leaves_no_scratch_files_and_no_change() {
         "scratch files survived a failed run: {:?}",
         leftover_temp_files(&sb)
     );
+}
+
+#[test]
+fn simulated_disk_full_and_permission_failures_are_stable_and_never_replace_the_rollout() {
+    for (stage, error_kind) in [
+        ("backup_write", "storage_full"),
+        ("manifest_write", "storage_full"),
+        ("compact_temp_write", "storage_full"),
+        ("manifest_write", "permission_denied"),
+    ] {
+        let sb = Sandbox::new();
+        let path = sb.compactable_session(
+            &format!("rollout-io-{stage}-{error_kind}.jsonl"),
+            &format!("io-{stage}-{error_kind}"),
+            "C:/work",
+        );
+        let before = fs::read(&path).unwrap();
+        let output = run_io_failure(&sb, &path, stage, error_kind);
+        assert_eq!(output.status.code(), Some(6), "stage {stage}");
+        let error = cli_error(&output);
+        assert_eq!(error["code"], "io_error", "stage {stage}: {error}");
+        assert_eq!(
+            error["native_transcript_changed"], false,
+            "stage {stage}: {error}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), before, "stage {stage}");
+        assert!(
+            leftover_temp_files(&sb).is_empty(),
+            "normal I/O failure cleanup left scratch at {stage}: {:?}",
+            leftover_temp_files(&sb)
+        );
+    }
+}
+
+#[test]
+fn an_unusable_vault_root_is_an_io_error_before_native_replacement() {
+    let sb = Sandbox::new();
+    let path = sb.compactable_session("rollout-unusable-vault.jsonl", "unusable-vault", "C:/work");
+    let before = fs::read(&path).unwrap();
+    let unusable = sb.dir.path().join("vault-is-a-file");
+    fs::write(&unusable, b"not a directory").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_codex-vault"))
+        .args(["--json", "--no-progress", "compact", path.to_str().unwrap()])
+        .env("CODEX_HOME", sb.dir.path().join("codex"))
+        .env("CODEX_VAULT_HOME", &unusable)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(6));
+    assert_eq!(cli_error(&output)["code"], "io_error");
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn a_source_that_disappears_mid_operation_fails_without_committing_recovery_state() {
+    let sb = Sandbox::new();
+    let path = sb.compactable_session("rollout-disappears.jsonl", "disappears", "C:/work");
+    let before = fs::read(&path).unwrap();
+    let output = run_compact_paused_at(&sb, &path, "analysis", true, || {
+        fs::remove_file(&path).unwrap();
+    });
+    assert!(!output.status.success());
+    let text = combined_output(&output);
+    assert!(
+        text.contains("io_error") || text.contains("session_changed"),
+        "{text}"
+    );
+    let manifest = manifest_path(
+        &ensure_vault_paths().unwrap(),
+        &VaultKey::for_rollout(&path),
+    );
+    assert!(!manifest.exists());
+    // The deletion was performed by the adversarial actor, not by Vault; restore the fixture only
+    // so the assertion can prove what bytes that actor removed.
+    fs::write(&path, &before).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn missing_truncated_and_corrupt_backups_are_refused_before_restore_replacement() {
+    enum Damage {
+        Missing,
+        Truncated,
+        Corrupt,
+    }
+    for damage in [Damage::Missing, Damage::Truncated, Damage::Corrupt] {
+        let sb = Sandbox::new();
+        let path = sb.compactable_session("rollout-bad-backup.jsonl", "bad-backup", "C:/work");
+        let compact = compact_safe_impl(&path).unwrap();
+        let compacted = fs::read(&path).unwrap();
+        let backup = compact.backup.unwrap();
+        match damage {
+            Damage::Missing => fs::remove_file(&backup).unwrap(),
+            Damage::Truncated => {
+                let mut bytes = fs::read(&backup).unwrap();
+                bytes.truncate(bytes.len() / 2);
+                fs::write(&backup, bytes).unwrap();
+            }
+            Damage::Corrupt => {
+                let mut bytes = fs::read(&backup).unwrap();
+                for byte in bytes.iter_mut().take(16) {
+                    *byte ^= 0x5a;
+                }
+                fs::write(&backup, bytes).unwrap();
+            }
+        }
+        match restore_impl(&path, RestoreTarget::Original) {
+            Err(VaultError::BackupMissing { .. }) => {}
+            Ok(result) => assert_eq!(result.status, "failed"),
+            Err(other) => panic!("unexpected restore error: {other}"),
+        }
+        assert_eq!(fs::read(&path).unwrap(), compacted);
+    }
+}
+
+#[test]
+fn invalid_and_truncated_manifests_are_never_partially_trusted() {
+    for body in ["{ definitely not json", "{\"manifest_version\":2,"] {
+        let sb = Sandbox::new();
+        let path = sb.compactable_session(
+            "rollout-invalid-manifest.jsonl",
+            "invalid-manifest",
+            "C:/work",
+        );
+        let archived = archive_impl(&path, false).unwrap();
+        let before = fs::read(&path).unwrap();
+        let manifest = archived.manifest.unwrap();
+        fs::write(&manifest, body).unwrap();
+        let error = restore_impl(&path, RestoreTarget::Latest).unwrap_err();
+        assert!(matches!(
+            error,
+            VaultError::Json { .. } | VaultError::ManifestInvalid { .. }
+        ));
+        assert_eq!(fs::read(&path).unwrap(), before);
+
+        let backup = archived.backup.unwrap();
+        let prune = prune_one(&path, true, true).unwrap();
+        assert!(backup.exists());
+        assert!(prune["note"].as_str().unwrap().contains("refusing"));
+    }
 }
 
 // ------------------------------------------------------------ nothing appended is ever lost
@@ -292,6 +535,58 @@ fn restore_captures_the_current_state_before_replacing_it() {
         fs::read(&session).unwrap(),
         grown,
         "the state discarded by restore must be recoverable"
+    );
+}
+
+#[test]
+fn restore_reversibility_keeps_the_newer_state_reachable_and_records_both_transitions() {
+    let sb = Sandbox::new();
+    let session = sb.compactable_session(
+        "rollout-restore-reversible.jsonl",
+        "restore-reversible",
+        "C:/work",
+    );
+    let state_a = fs::read(&session).unwrap();
+    compact_safe_impl(&session).unwrap();
+    append_jsonl(&session, &completed_turn("state-c"));
+    let state_c = fs::read(&session).unwrap();
+    let state_c_sha = codex_vault::hashing::sha256_file(&session).unwrap();
+
+    restore_impl(&session, RestoreTarget::Original).unwrap();
+    assert_eq!(fs::read(&session).unwrap(), state_a);
+
+    let listed = codex_vault::ops::list_anchors(&session).unwrap();
+    let state_c_anchor = listed["anchors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|anchor| anchor["source_sha256"] == state_c_sha)
+        .expect("state C must appear in restore --list after restoring A");
+    let state_c_backup = PathBuf::from(state_c_anchor["backup_path"].as_str().unwrap());
+    assert_eq!(state_c_anchor["exists"], true);
+
+    restore_impl(&session, RestoreTarget::Backup(state_c_backup)).unwrap();
+    assert_eq!(fs::read(&session).unwrap(), state_c);
+    assert_eq!(
+        codex_vault::hashing::sha256_file(&session).unwrap(),
+        state_c_sha
+    );
+
+    let manifest = load_manifest(&manifest_path(
+        &ensure_vault_paths().unwrap(),
+        &VaultKey::for_rollout(&session),
+    ))
+    .unwrap()
+    .unwrap();
+    let restore_events: Vec<_> = manifest
+        .history
+        .iter()
+        .filter(|entry| entry.operation == "restore")
+        .map(|entry| entry.outcome.as_str())
+        .collect();
+    assert!(
+        restore_events.ends_with(&["prepared", "restored", "prepared", "restored"]),
+        "unexpected restore history: {restore_events:?}"
     );
 }
 
@@ -1439,6 +1734,138 @@ fn an_interrupted_chain_transaction_restores_the_complete_preoperation_state() {
     }
 }
 
+#[test]
+fn every_single_file_compaction_crash_boundary_preserves_or_recovers_the_preoperation_state() {
+    let stages = [
+        ("backup_created", false, false),
+        ("backup_verified", false, false),
+        ("compact_temp_written", false, false),
+        ("prepared_journal_written", false, true),
+        ("atomic_replacement", true, true),
+        ("post_replacement_verified", true, true),
+        ("final_journal_commit", true, false),
+    ];
+
+    for (stage, replacement_happened, prepared_expected) in stages {
+        let sb = Sandbox::new();
+        let path = sb.compactable_session(
+            &format!("rollout-crash-compact-{stage}.jsonl"),
+            &format!("crash-compact-{stage}"),
+            "C:/work",
+        );
+        let original = fs::read(&path).unwrap();
+        let output = run_crash_stage(
+            &sb,
+            &["--json", "--no-progress", "compact", path.to_str().unwrap()],
+            stage,
+        );
+        assert!(!output.status.success(), "stage {stage} should abort");
+
+        if replacement_happened {
+            assert_ne!(fs::read(&path).unwrap(), original, "stage {stage}");
+        } else {
+            assert_eq!(fs::read(&path).unwrap(), original, "stage {stage}");
+        }
+
+        let doctor = doctor_one(&path, DoctorDepth::Standard).unwrap();
+        if prepared_expected {
+            assert_eq!(
+                doctor.status, "warning",
+                "stage {stage}: {:?}",
+                doctor.notes
+            );
+            assert!(
+                doctor.notes.iter().any(|note| note.contains("prepared")),
+                "stage {stage}: {:?}",
+                doctor.notes
+            );
+        }
+        assert_manifest_has_no_temp_anchor(&path);
+
+        if replacement_happened {
+            let restored = restore_impl(&path, RestoreTarget::Latest).unwrap();
+            assert_eq!(restored.status, "ok", "stage {stage}");
+            assert_eq!(fs::read(&path).unwrap(), original, "stage {stage}");
+        }
+    }
+}
+
+#[test]
+fn every_restore_crash_boundary_preserves_or_recovers_the_newer_pre_restore_state() {
+    let stages = [
+        ("backup_created", false, false),
+        ("backup_verified", false, false),
+        ("restore_temp_written", false, false),
+        ("prepared_journal_written", false, true),
+        ("atomic_replacement", true, true),
+        ("post_replacement_verified", true, true),
+        ("final_journal_commit", true, false),
+    ];
+
+    for (stage, replacement_happened, prepared_expected) in stages {
+        let sb = Sandbox::new();
+        let path = sb.compactable_session(
+            &format!("rollout-crash-restore-{stage}.jsonl"),
+            &format!("crash-restore-{stage}"),
+            "C:/work",
+        );
+        compact_safe_impl(&path).unwrap();
+        append_jsonl(&path, &completed_turn(&format!("newer-{stage}")));
+        let newer = fs::read(&path).unwrap();
+        let original_anchor = load_manifest(&manifest_path(
+            &ensure_vault_paths().unwrap(),
+            &VaultKey::for_rollout(&path),
+        ))
+        .unwrap()
+        .unwrap()
+        .original;
+
+        let output = run_crash_stage(
+            &sb,
+            &[
+                "--json",
+                "--no-progress",
+                "restore",
+                path.to_str().unwrap(),
+                "--original",
+            ],
+            stage,
+        );
+        assert!(!output.status.success(), "stage {stage} should abort");
+
+        if replacement_happened {
+            assert_eq!(
+                codex_vault::hashing::sha256_file(&path).unwrap(),
+                original_anchor.source_sha256,
+                "stage {stage}"
+            );
+        } else {
+            assert_eq!(fs::read(&path).unwrap(), newer, "stage {stage}");
+        }
+
+        let doctor = doctor_one(&path, DoctorDepth::Standard).unwrap();
+        if prepared_expected {
+            assert_eq!(
+                doctor.status, "warning",
+                "stage {stage}: {:?}",
+                doctor.notes
+            );
+            assert!(
+                doctor.notes.iter().any(|note| note.contains("prepared")),
+                "stage {stage}: {:?}",
+                doctor.notes
+            );
+        }
+        assert_manifest_has_no_temp_anchor(&path);
+
+        if replacement_happened {
+            let restored = restore_impl(&path, RestoreTarget::Latest).unwrap();
+            assert_eq!(restored.status, "ok", "stage {stage}");
+            assert_eq!(fs::read(&path).unwrap(), newer, "stage {stage}");
+        }
+    }
+}
+
 #[cfg(windows)]
 #[test]
 fn a_concurrently_open_chain_page_refuses_the_whole_operation_without_partial_rewrite() {
@@ -1468,6 +1895,97 @@ fn a_concurrently_open_chain_page_refuses_the_whole_operation_without_partial_re
     assert_eq!(error.code(), "session_locked");
     assert_eq!(fs::read(&root).unwrap(), before[0]);
     assert_eq!(fs::read(&leaf).unwrap(), before[1]);
+}
+
+#[cfg(windows)]
+#[test]
+fn a_writer_held_rollout_is_refused_with_a_clear_in_use_error() {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
+
+    let sb = Sandbox::new();
+    let path = sb.compactable_session("rollout-active-writer.jsonl", "active-writer", "C:/work");
+    let before = fs::read(&path).unwrap();
+    let _writer = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(FILE_SHARE_READ)
+        .open(&path)
+        .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_codex-vault"))
+        .args(["--json", "--no-progress", "compact", path.to_str().unwrap()])
+        .env("CODEX_HOME", sb.dir.path().join("codex"))
+        .env("CODEX_VAULT_HOME", sb.vault())
+        .output()
+        .unwrap();
+    let text = combined_output(&output);
+    assert!(!output.status.success());
+    assert!(text.contains("session_locked"), "{text}");
+    assert!(
+        text.contains("session may still be open in Codex"),
+        "{text}"
+    );
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn concurrent_appends_are_detected_at_every_single_file_compaction_stage() {
+    for stage in ["analysis", "backup", "compact_output", "pre_replace"] {
+        let sb = Sandbox::new();
+        let path = sb.compactable_session(
+            &format!("rollout-race-{stage}.jsonl"),
+            &format!("race-{stage}"),
+            "C:/work",
+        );
+        let before = fs::read(&path).unwrap();
+        let marker = format!("ACTIVE-001-{stage}-APPEND-MUST-SURVIVE");
+        let output = run_compact_paused_at(&sb, &path, stage, true, || {
+            append_race_marker(&path, &marker)
+                .expect("race append should be admitted by test hook");
+        });
+        let text = combined_output(&output);
+        assert!(
+            !output.status.success(),
+            "{stage}: concurrent append must not yield apparent success: {text}"
+        );
+        assert!(text.contains("session_changed"), "{stage}: {text}");
+        assert!(
+            text.contains("Vault did not replace the transcript"),
+            "{stage}: {text}"
+        );
+        let after = fs::read(&path).unwrap();
+        assert!(
+            after.starts_with(&before),
+            "{stage}: Vault rewrote pre-existing bytes after detecting a race"
+        );
+        assert!(
+            String::from_utf8_lossy(&after).contains(&marker),
+            "{stage}: valid appended content was lost"
+        );
+    }
+}
+
+#[test]
+fn an_external_source_replacement_is_detected_even_when_bytes_are_identical() {
+    let sb = Sandbox::new();
+    let path = sb.compactable_session("rollout-race-replaced.jsonl", "race-replaced", "C:/work");
+    let before = fs::read(&path).unwrap();
+    let replacement = sb.sessions().join("replacement-byte-identical.jsonl");
+    fs::write(&replacement, &before).unwrap();
+
+    let output = run_compact_paused_at(&sb, &path, "pre_replace", true, || {
+        codex_vault::fsatomic::atomic_replace(&replacement, &path)
+            .expect("external byte-identical replacement should succeed in race harness");
+    });
+    let text = combined_output(&output);
+    assert!(!output.status.success(), "{text}");
+    assert!(text.contains("session_changed"), "{text}");
+    assert!(
+        text.contains("pre-replacement source identity verification"),
+        "{text}"
+    );
+    assert_eq!(fs::read(&path).unwrap(), before);
 }
 
 #[test]
@@ -1619,13 +2137,33 @@ fn repeated_compaction_is_a_noop_and_keeps_the_restore_target() {
     let p = sb.compactable_session("rollout-repeat.jsonl", "repeat", "C:/work");
     let first = compact_safe_impl(&p).unwrap();
     let bytes = fs::read(&p).unwrap();
+    let sha = codex_vault::hashing::sha256_file(&p).unwrap();
     let mf = first.manifest.unwrap();
     let journal = fs::read(&mf).unwrap();
     let backups = sb.backups();
-    assert_eq!(compact_safe_impl(&p).unwrap().status, "already_compact");
-    assert_eq!(fs::read(&p).unwrap(), bytes);
-    assert_eq!(fs::read(&mf).unwrap(), journal);
-    assert_eq!(sb.backups(), backups);
+    let restore_target = load_manifest(&mf).unwrap().unwrap().restore;
+    for attempt in 2..=4 {
+        assert_eq!(
+            compact_safe_impl(&p).unwrap().status,
+            "already_compact",
+            "attempt {attempt}"
+        );
+        assert_eq!(fs::read(&p).unwrap(), bytes, "attempt {attempt}");
+        assert_eq!(
+            codex_vault::hashing::sha256_file(&p).unwrap(),
+            sha,
+            "attempt {attempt}"
+        );
+        assert_eq!(fs::read(&mf).unwrap(), journal, "attempt {attempt}");
+        assert_eq!(sb.backups(), backups, "attempt {attempt}");
+        assert_eq!(
+            load_manifest(&mf).unwrap().unwrap().restore.source_sha256,
+            restore_target.source_sha256,
+            "attempt {attempt}"
+        );
+    }
+    let deep = doctor_one(&p, DoctorDepth::Deep).unwrap();
+    assert_eq!(deep.status, "ok", "{:?}", deep.notes);
 }
 
 #[test]
