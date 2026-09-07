@@ -962,9 +962,11 @@ fn reconstruction_is_identical_after_compaction() {
 #[test]
 #[ignore = "needs Codex and CODEX_VAULT_CHAIN_CASE pointing to a real multi-page thread id"]
 fn paginated_chain_reconstruction_is_identical_after_whole_conversation_compaction() {
+    let Ok(id) = std::env::var("CODEX_VAULT_CHAIN_CASE") else {
+        eprintln!("private whole-chain case not configured; skipping this optional local check");
+        return;
+    };
     require_codex();
-    let id = std::env::var("CODEX_VAULT_CHAIN_CASE")
-        .expect("set CODEX_VAULT_CHAIN_CASE to a private multi-page thread id");
     let fixture = corpus_sessions()
         .iter()
         .find(|s| s.session_id == id)
@@ -1025,9 +1027,11 @@ fn paginated_chain_reconstruction_is_identical_after_whole_conversation_compacti
 #[test]
 #[ignore = "needs Codex and CODEX_VAULT_BASELINE_CASE pointing to a private thread id"]
 fn requested_original_reconstruction_baseline_resumes_twice() {
+    let Ok(id) = std::env::var("CODEX_VAULT_BASELINE_CASE") else {
+        eprintln!("private baseline case not configured; skipping this optional local check");
+        return;
+    };
     require_codex();
-    let id = std::env::var("CODEX_VAULT_BASELINE_CASE")
-        .expect("set CODEX_VAULT_BASELINE_CASE to the thread id to baseline");
     let fixture = corpus_sessions()
         .iter()
         .find(|s| s.session_id == id)
