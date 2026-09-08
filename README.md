@@ -101,8 +101,9 @@ preserving Codex's supported reconstruction behavior. It retains a verified reco
 and makes archived user and assistant messages searchable.
 
 A smaller rollout does **not** always mean less disk usage: retained backups cost space.
-`compact --dry-run` estimates the net change; completed operations include backups and metadata
-in their storage report and warn when total usage increases. `codex-vault storage` gives a
+`compact --dry-run` estimates the net change; completed operations report the transcript plus only
+the backup and recovery-metadata files that operation created or rewrote, and warn when total usage
+increases. `codex-vault storage` gives a
 read-only inventory of native rollouts, required recovery snapshots, unreferenced backups,
 recovery metadata and the rebuildable search index. If a recovery journal is unreadable, unmatched
 backups are reported as ambiguous rather than being classified as unreferenced. The inventory does

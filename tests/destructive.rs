@@ -7,7 +7,7 @@
 use codex_vault::chain::{compact_conversation, restore_conversation};
 use codex_vault::commands::{
     analyze_command, compact_conversation_command, compact_result_value, compact_safe_command,
-    doctor_command, restore_conversation_command, BatchOptions,
+    doctor_command, prune_command, restore_conversation_command, BatchOptions,
 };
 use codex_vault::error::VaultError;
 use codex_vault::manifest::{load_manifest, CodexVersionSource, Status};

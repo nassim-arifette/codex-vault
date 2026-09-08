@@ -1,7 +1,8 @@
 use super::planning::{build_plans, chain_paths, preview};
 use super::recovery::{backup_target, restore_pages_from_anchors};
 use super::transaction::{
-    pending_transaction, write_transaction, ChainTransaction, ChainTxPage, CHAIN_TX_VERSION,
+    pending_transaction, transaction_path, write_transaction, ChainTransaction, ChainTxPage,
+    CHAIN_TX_VERSION,
 };
 use crate::backup::create_verified_backup_of;
 use crate::discovery::resolve_conversation_chain;
@@ -12,9 +13,12 @@ use crate::fsatomic::{
 };
 use crate::hashing::sha256_file;
 use crate::ops::{commit_chain_page_manifest, prepare_chain_page_manifest, CompactOptions};
-use crate::paths::ensure_vault_paths;
+use crate::paths::{ensure_vault_paths, manifest_path, summary_path, VaultKey};
 use crate::rollout::verify_jsonl;
-use crate::storage::{process_peak_rss_bytes, vault_storage_breakdown};
+use crate::storage::{
+    operation_storage_report, process_peak_rss_bytes, NativeStorageFile, StorageFileKind,
+    TrackedStorageFile,
+};
 use crate::util::{format_size, now_epoch_millis, now_iso_utc};
 use serde_json::{json, Value};
 use std::fs;
@@ -54,7 +58,7 @@ pub fn compact_conversation(
     let paths = chain_paths(&chain);
     if options.dry_run {
         let plans = build_plans(&chain, options)?;
-        return preview(&chain, &plans, &vault, started);
+        return preview(&chain, &plans, started);
     }
 
     if let Some(pending) = pending_transaction(&vault, &chain.session_id)? {
@@ -84,7 +88,22 @@ pub fn compact_conversation(
     }
     let plans = build_plans(&locked_chain, options)?;
     let native_before: u64 = plans.iter().map(|p| p.input_size).sum();
-    let vault_before = vault_storage_breakdown(&vault)?;
+    let native_storage: Vec<_> = plans
+        .iter()
+        .map(|plan| NativeStorageFile::from_before(&plan.path, plan.input_size))
+        .collect();
+    let mut tracked_storage = Vec::with_capacity(plans.len() * 3 + 1);
+    for plan in &plans {
+        let key = VaultKey::for_rollout(&plan.path);
+        tracked_storage.push(TrackedStorageFile::capture(
+            StorageFileKind::Manifest,
+            manifest_path(&vault, &key),
+        )?);
+        tracked_storage.push(TrackedStorageFile::capture(
+            StorageFileKind::Summary,
+            summary_path(&vault, &key),
+        )?);
+    }
 
     let txid = format!("{}-{}", now_epoch_millis(), std::process::id());
     let mut tx = ChainTransaction {
@@ -101,6 +120,10 @@ pub fn compact_conversation(
     // Capture every exact pre-operation page before producing any replacement.
     for plan in &plans {
         let target = backup_target(&vault, &plan.path, &txid, "prechain");
+        tracked_storage.push(TrackedStorageFile::capture(
+            StorageFileKind::Backup,
+            target.clone(),
+        )?);
         let anchor = create_verified_backup_of(&plan.path, &target, Some(&plan.input_sha256))?;
         prepare_chain_page_manifest(&plan.path, &anchor)?;
         tx.pages.push(ChainTxPage {
@@ -169,6 +192,10 @@ pub fn compact_conversation(
     }
 
     tx.status = "prepared".to_string();
+    tracked_storage.push(TrackedStorageFile::capture(
+        StorageFileKind::Transaction,
+        transaction_path(&vault, &tx),
+    )?);
     let tx_path = write_transaction(&vault, &tx)?;
     let commit_result: Result<()> = (|| {
         let mut replacement_locks = Vec::with_capacity(plans.len());
@@ -232,11 +259,13 @@ pub fn compact_conversation(
     drop(source_locks);
 
     let native_after: u64 = tx.pages.iter().map(|p| p.after_size).sum();
-    let vault_after = vault_storage_breakdown(&vault)?;
     let peak_temporary_disk_bytes: u64 = prepared
         .iter()
         .map(|prepared| prepared.copy.result_size)
         .sum();
+    let mut storage = operation_storage_report(&native_storage, &tracked_storage)?;
+    storage["peak_temporary_disk_bytes"] = json!(peak_temporary_disk_bytes);
+    storage["native_saved_human"] = json!(format_size(native_before.saturating_sub(native_after)));
     let runtime_ms = started.elapsed().as_millis();
     Ok(json!({
         "status": "ok",
@@ -251,25 +280,7 @@ pub fn compact_conversation(
             "removed_bytes": prepared.copy.removed_bytes,
             "rewritten_successor_boundary_bytes": prepared.copy.result_prefix_size,
         })).collect::<Vec<_>>(),
-        "storage": {
-            "measurement": "logical_bytes",
-            "native_before_bytes": native_before,
-            "native_after_bytes": native_after,
-            "native_saved_bytes": native_before.saturating_sub(native_after),
-            "backup_bytes_before": vault_before.backup_bytes,
-            "backup_bytes_after": vault_after.backup_bytes,
-            "new_backup_bytes": vault_after.backup_bytes.saturating_sub(vault_before.backup_bytes),
-            "recovery_metadata_bytes_before": vault_before.metadata_bytes,
-            "recovery_metadata_bytes_after": vault_after.metadata_bytes,
-            "index_bytes_before": vault_before.index_bytes,
-            "index_bytes_after": vault_after.index_bytes,
-            "vault_total_bytes_before": vault_before.total_bytes,
-            "vault_total_bytes_after": vault_after.total_bytes,
-            "new_vault_bytes": vault_after.total_bytes.saturating_sub(vault_before.total_bytes),
-            "peak_temporary_disk_bytes": peak_temporary_disk_bytes,
-            "net_saved_bytes": (native_before as i128 + vault_before.total_bytes as i128) - (native_after as i128 + vault_after.total_bytes as i128),
-            "native_saved_human": format_size(native_before.saturating_sub(native_after)),
-        },
+        "storage": storage,
         "performance": {
             "runtime_ms": runtime_ms,
             "process_peak_ram_bytes": process_peak_rss_bytes(),

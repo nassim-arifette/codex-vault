@@ -3,16 +3,17 @@
 use crate::analysis::analyze_session_within;
 use crate::chain::{compact_conversation, restore_conversation};
 use crate::discovery::{
-    discover_sessions, discover_sessions_scoped, parse_filter, resolve_session_reference,
-    FilterScope,
+    discover_sessions, discover_sessions_scoped, discover_sessions_with_jobs, parse_filter,
+    resolve_session_reference, FilterScope,
 };
 use crate::error::{Result, VaultError};
 use crate::ops::{
-    archive_impl, compact_safe_impl_with, doctor_one, list_anchors, prune_one, restore_impl,
-    CommandResult, CommandStatus, CompactOptions, DoctorDepth, RestoreTarget,
+    archive_impl, compact_safe_impl_with, doctor_one, doctor_one_with_context, list_anchors,
+    prune_many, prune_one, restore_impl, CatalogContext, CommandResult, CommandStatus,
+    CompactOptions, DoctorDepth, RestoreTarget,
 };
 use crate::parallel::{map_ordered, Progress, ProgressMode};
-use crate::paths::{codex_root, detect_codex_version, vault_root};
+use crate::paths::{codex_root, detect_codex_version, ensure_vault_paths, vault_root};
 use crate::rollout::is_codex_zstd_jsonl;
 use crate::util::format_size;
 use serde_json::{json, Value};
@@ -87,9 +88,10 @@ pub fn restore_result_value(result: CommandResult) -> Value {
     value
 }
 
-pub fn scan_command(cwd_filter: Option<String>) -> Result<Value> {
+pub fn scan_command(cwd_filter: Option<String>, batch: BatchOptions) -> Result<Value> {
     let filter = parse_filter(cwd_filter)?;
-    let sessions = discover_sessions(filter.as_deref())?;
+    let sessions =
+        discover_sessions_with_jobs(filter.as_deref(), FilterScope::Related, batch.jobs)?;
     let total_size: u64 = sessions.iter().map(|s| s.size_bytes).sum();
     Ok(json!({
         "codex_root": codex_root(),
@@ -319,9 +321,12 @@ pub fn doctor_command(
         return Ok(json!([doctor_one(&path, depth)?]));
     }
     let sessions = discover_sessions(filter.as_deref())?;
+    let targets: Vec<_> = sessions.iter().map(|info| info.path.clone()).collect();
+    let vault = ensure_vault_paths()?;
+    let context = CatalogContext::build(&vault, &targets, true, true);
     let progress = Progress::new("doctor", sessions.len(), batch.progress);
     let checks = map_ordered(&sessions, batch.jobs, |_, info| {
-        let row = match doctor_one(&info.path, depth) {
+        let row = match doctor_one_with_context(&info.path, depth, &context) {
             Ok(check) => json!(check),
             Err(err) => json!({
                 "session": info.session_id,
@@ -386,17 +391,19 @@ pub fn prune_command(
     apply: bool,
 ) -> Result<Value> {
     let filter = parse_filter(cwd_filter)?;
-    let paths = match session {
-        Some(reference) => vec![resolve_session_reference(&reference, filter.as_deref())?],
-        None => discover_sessions(filter.as_deref())?
-            .into_iter()
-            .map(|s| s.path)
-            .collect(),
+    let rows = match session {
+        Some(reference) => {
+            let path = resolve_session_reference(&reference, filter.as_deref())?;
+            vec![prune_one(&path, unreferenced_backups, apply)?]
+        }
+        None => {
+            let paths: Vec<_> = discover_sessions(filter.as_deref())?
+                .into_iter()
+                .map(|s| s.path)
+                .collect();
+            prune_many(&paths, unreferenced_backups, apply)?
+        }
     };
-    let mut rows = Vec::with_capacity(paths.len());
-    for path in &paths {
-        rows.push(prune_one(path, unreferenced_backups, apply)?);
-    }
     Ok(json!({
         "applied": apply,
         "included_unreferenced_backups": unreferenced_backups,

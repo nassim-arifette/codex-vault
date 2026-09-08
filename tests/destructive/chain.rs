@@ -38,12 +38,35 @@ fn a_linear_paginated_conversation_compacts_and_restores_as_one_transaction() {
     .unwrap();
     assert_eq!(preview["status"], "preview");
     assert_eq!(preview["page_count"], 3);
+    assert_eq!(preview["storage"]["accounting_version"], 2);
+    assert_eq!(preview["storage"]["scope"], "current_operation_preview");
+    assert!(preview["storage"].get("vault_total_bytes_before").is_none());
+    assert!(preview["storage"]
+        .get("retained_backup_bytes_before")
+        .is_none());
     assert!(preview.get("search_index").is_none());
 
     let result =
         compact_conversation_command("chain".to_string(), None, CompactOptions::default()).unwrap();
     assert_eq!(result["status"], "ok");
     assert_eq!(result["page_count"], 3);
+    assert_eq!(result["storage"]["accounting_version"], 2);
+    assert_eq!(result["storage"]["scope"], "current_operation");
+    assert_eq!(
+        result["storage"]["net_saved_bytes"].as_i64().unwrap(),
+        result["storage"]["native_saved_bytes"].as_u64().unwrap() as i64
+            - result["storage"]["persistent_vault_delta_bytes"]
+                .as_i64()
+                .unwrap()
+    );
+    assert!(result["storage"]["backup_bytes_created"].as_u64().unwrap() > 0);
+    let created = result["storage"]["files_created"].as_array().unwrap();
+    for kind in ["backup", "manifest", "summary", "transaction"] {
+        assert!(
+            created.iter().any(|file| file["kind"] == kind),
+            "chain compaction should report the created {kind}"
+        );
+    }
     assert_eq!(result["search_index"]["may_be_stale"], true);
     assert!(fs::metadata(&root).unwrap().len() < original[0].len() as u64);
     assert!(fs::metadata(&middle).unwrap().len() < original[1].len() as u64);
@@ -126,6 +149,7 @@ fn a_compacted_chain_can_continue_paginate_recompact_and_restore_the_second_gene
     let second = compact_conversation("lifecycle", None, CompactOptions::default()).unwrap();
     assert_eq!(second["status"], "ok");
     assert_eq!(second["page_count"], 4);
+    assert_eq!(second["storage"]["accounting_version"], 2);
     assert!(
         second["storage"]["native_after_bytes"].as_u64().unwrap()
             < second["storage"]["native_before_bytes"].as_u64().unwrap()

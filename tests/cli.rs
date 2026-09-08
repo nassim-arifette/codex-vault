@@ -4,6 +4,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 mod common;
 
@@ -185,9 +186,12 @@ fn scan_readable_output_limits_and_sorts_without_truncating_json() {
     let redirected = sb.ok(&["scan"]);
     let explicit = sb.ok(&["--json", "scan"]);
     let with_flags = sb.ok(&["--json", "scan", "--all", "--paths"]);
+    let serial = sb.ok(&["--json", "--jobs", "1", "scan"]);
+    let parallel = sb.ok(&["--json", "--jobs", "8", "scan"]);
     assert_eq!(redirected["sessions"].as_array().unwrap().len(), 7);
     assert_eq!(redirected["sessions"], explicit["sessions"]);
     assert_eq!(explicit["sessions"], with_flags["sessions"]);
+    assert_eq!(serial["sessions"], parallel["sessions"]);
 }
 
 #[cfg(unix)]
@@ -599,7 +603,7 @@ fn dry_run_predicts_backup_bytes_without_creating_a_vault() {
     let backup = PathBuf::from(actual["backup"].as_str().unwrap());
     assert_eq!(
         plan["stats"]["storage_preview"]["new_backup_bytes"],
-        fs::metadata(backup).unwrap().len()
+        fs::metadata(&backup).unwrap().len()
     );
     let disk_after = fs::metadata(&sb.session).unwrap().len()
         + codex_vault::storage::directory_bytes(&sb.dir.path().join("vault")).unwrap();
@@ -611,6 +615,99 @@ fn dry_run_predicts_backup_bytes_without_creating_a_vault() {
     );
     // Tiny transcripts cost more to back up and journal than they save.
     assert_eq!(actual["stats"]["storage"]["space_increased"], true);
+    assert_eq!(actual["stats"]["storage"]["accounting_version"], 2);
+    assert_eq!(actual["stats"]["storage"]["scope"], "current_operation");
+    let created = actual["stats"]["storage"]["files_created"]
+        .as_array()
+        .unwrap();
+    for kind in ["backup", "manifest", "summary"] {
+        assert!(
+            created.iter().any(|file| file["kind"] == kind),
+            "first compaction should report the created {kind}"
+        );
+    }
+    assert_eq!(
+        actual["stats"]["storage"]["backup_bytes_created"],
+        fs::metadata(backup).unwrap().len()
+    );
+    assert!(
+        actual["stats"]["storage"]["manifest_growth_bytes"]
+            .as_i64()
+            .unwrap()
+            > 0
+    );
+    assert!(
+        actual["stats"]["storage"]["summary_growth_bytes"]
+            .as_i64()
+            .unwrap()
+            > 0
+    );
+}
+
+#[test]
+fn compact_storage_accounting_ignores_unrelated_vault_changes() {
+    let sb = CliSandbox::new();
+    let vault = sb.dir.path().join("vault");
+    fs::create_dir_all(&vault).unwrap();
+    let unrelated = vault.join("external-noise.bin");
+    fs::write(&unrelated, b"before").unwrap();
+    let unrelated_before = fs::metadata(&unrelated).unwrap().len();
+    let native_before = fs::metadata(&sb.session).unwrap().len();
+    let vault_before = codex_vault::storage::directory_bytes(&vault).unwrap();
+
+    let ready = sb.dir.path().join("storage-accounting.ready");
+    let go = sb.dir.path().join("storage-accounting.continue");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_codex-vault"))
+        .args(["--json", "--no-progress", "compact", "cli-test"])
+        .env("CODEX_HOME", sb.dir.path().join("codex"))
+        .env("CODEX_VAULT_HOME", &vault)
+        .env("CODEX_VAULT_TEST_PAUSE_STAGE", "pre_replace")
+        .env("CODEX_VAULT_TEST_STAGE_READY", &ready)
+        .env("CODEX_VAULT_TEST_STAGE_CONTINUE", &go)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !ready.exists() {
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!("compact child exited before accounting pause: {status}");
+        }
+        assert!(Instant::now() < deadline, "compact child never paused");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    fs::write(&unrelated, vec![b'x'; 256 * 1024]).unwrap();
+    fs::write(&go, b"continue").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value = CliSandbox::value(&output);
+    let storage = &value["stats"]["storage"];
+    assert_eq!(storage["accounting_version"], 2);
+    assert_eq!(storage["scope"], "current_operation");
+
+    let native_after = fs::metadata(&sb.session).unwrap().len();
+    let vault_after = codex_vault::storage::directory_bytes(&vault).unwrap();
+    let unrelated_after = fs::metadata(&unrelated).unwrap().len();
+    let whole_vault_net = (native_before as i128 + vault_before as i128)
+        - (native_after as i128 + vault_after as i128);
+    let unrelated_growth = unrelated_after as i128 - unrelated_before as i128;
+    assert_eq!(
+        storage["net_saved_bytes"].as_i64().unwrap() as i128,
+        whole_vault_net + unrelated_growth,
+        "external Vault growth must not contaminate this operation's delta"
+    );
+    for bucket in ["files_created", "files_modified", "files_deleted"] {
+        assert!(storage[bucket]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|file| file["path"] != unrelated.to_string_lossy().as_ref()));
+    }
 }
 
 #[test]
@@ -652,12 +749,16 @@ fn multiple_compactions_preserve_each_cycle_and_account_for_retained_snapshots()
             .unwrap(),
         (grown.len() as i64 + vault_before as i64) - (native_after as i64 + vault_after as i64)
     );
+    assert_eq!(report["stats"]["storage"]["accounting_version"], 2);
     assert!(
-        report["stats"]["storage"]["after"]["backup_bytes"]
+        report["stats"]["storage"]["backup_bytes_created"]
             .as_u64()
             .unwrap()
-            > first_backup_bytes
+            > 0
     );
+    let second_backup_bytes =
+        codex_vault::storage::directory_bytes(&sb.dir.path().join("vault/backups")).unwrap();
+    assert!(second_backup_bytes > first_backup_bytes);
     println!("synthetic-cycle-two: native_before={} native_after={} vault_before={} vault_after={} net_saved={}", grown.len(), native_after, vault_before, vault_after, report["stats"]["storage"]["net_saved_bytes"]);
     let no_op = CliSandbox::value(&sb.run(&["--json", "compact", "cli-test"], None));
     assert_eq!(no_op["status"], "already_compact");
@@ -729,6 +830,44 @@ fn search_survives_compaction_reindex_corruption_rebuild_and_restore() {
     fs::remove_file(&sb.session).unwrap();
     sb.ok(&["index"]);
     assert_eq!(sb.ok(&["read", id])["text"], read["text"]);
+}
+
+#[test]
+fn index_refresh_detects_same_size_content_rewrite() {
+    let sb = CliSandbox::new();
+    sb.add_historical_message();
+    let seeded = sb.ok(&["index"]);
+    assert_eq!(seeded["updated_sources"], 1);
+    assert_eq!(sb.ok(&["index", "--status"])["schema_version"], 1);
+    let before = fs::read_to_string(&sb.session).unwrap();
+    let after = before.replace("rotating refresh tokens", "reissued refresh tokens");
+    assert_eq!(
+        after.len(),
+        before.len(),
+        "fixture rewrite must keep file size"
+    );
+    fs::write(&sb.session, after).unwrap();
+
+    let refreshed = sb.ok(&["index"]);
+    assert_eq!(refreshed["schema_version"], 1);
+    assert_eq!(refreshed["updated_sources"], 1);
+    assert_eq!(refreshed["unchanged_sources"], 0);
+    assert_eq!(refreshed["refresh_integrity"]["content_identity"], "sha256");
+    assert_eq!(
+        refreshed["refresh_integrity"]["fingerprint"],
+        "not_used_for_content_identity"
+    );
+    assert!(sb.ok(&["search", "rotating refresh tokens"])["matches"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        sb.ok(&["search", "reissued refresh tokens"])["matches"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]

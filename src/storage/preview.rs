@@ -9,6 +9,9 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::Path;
 
+/// Legacy whole-Vault snapshot helper kept for Rust API compatibility.
+///
+/// Mutation commands no longer use this type; STORAGE-001 accounting is operation-scoped.
 #[derive(Debug, Serialize)]
 pub struct StorageSnapshot {
     pub native_bytes: u64,
@@ -24,6 +27,7 @@ impl StorageSnapshot {
             backup_bytes: directory_bytes(&vault.backups)?,
         })
     }
+
     pub fn delta(&self, after: &Self) -> Value {
         let before_total = self.native_bytes as i128 + self.vault_bytes as i128;
         let after_total = after.native_bytes as i128 + after.vault_bytes as i128;

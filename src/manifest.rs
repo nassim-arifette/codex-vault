@@ -11,6 +11,7 @@ use crate::paths::{manifest_path, summary_path, VaultKey, VaultPaths};
 use crate::util::format_size;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::io::Write as IoWrite;
@@ -174,20 +175,20 @@ impl Manifest {
     /// Every recovery anchor this session has: the immutable original plus every snapshot
     /// recorded in history, oldest first.
     pub fn anchors(&self) -> Vec<RecoveryAnchor> {
-        let mut out = vec![self.original.clone()];
+        let mut out = Vec::new();
+        let mut seen = HashSet::new();
+        let mut push_unique = |anchor: RecoveryAnchor| {
+            if seen.insert(anchor.backup_path.clone()) {
+                out.push(anchor);
+            }
+        };
+        push_unique(self.original.clone());
         for entry in &self.history {
             if let Some(a) = &entry.anchor {
-                if !out.iter().any(|x| x.backup_path == a.backup_path) {
-                    out.push(a.clone());
-                }
+                push_unique(a.clone());
             }
         }
-        if !out
-            .iter()
-            .any(|x| x.backup_path == self.restore.backup_path)
-        {
-            out.push(self.restore.clone());
-        }
+        push_unique(self.restore.clone());
         out
     }
 }

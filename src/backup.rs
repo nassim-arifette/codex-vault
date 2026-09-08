@@ -253,11 +253,17 @@ pub fn unreferenced_backups(
 /// Compare two paths without being fooled by `\\?\` prefixes or case differences that
 /// `canonicalize` introduces on Windows.
 pub fn paths_equal(a: &Path, b: &Path) -> bool {
-    fn key(p: &Path) -> String {
-        let s = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-        let s = s.to_string_lossy().replace('\\', "/");
-        let s = s.strip_prefix("//?/").unwrap_or(&s).to_string();
-        s.to_ascii_lowercase()
-    }
-    key(a) == key(b)
+    comparable_path(a) == comparable_path(b)
+}
+
+/// Stable identity used for recovery-reference membership checks.
+///
+/// Keep this exactly aligned with `paths_equal`: recovery safety historically treats path case as
+/// insignificant and strips Windows verbatim prefixes. Catalog-wide audits normalize each path
+/// once and use a hash set instead of canonicalizing it repeatedly for every candidate.
+pub(crate) fn comparable_path(path: &Path) -> String {
+    let normalized = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let normalized = normalized.to_string_lossy().replace('\\', "/");
+    let normalized = normalized.strip_prefix("//?/").unwrap_or(&normalized);
+    normalized.to_ascii_lowercase()
 }

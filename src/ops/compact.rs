@@ -10,7 +10,9 @@ use crate::fsatomic::{
 };
 use crate::hashing::{decompress_file, sha256_file};
 use crate::manifest::{write_manifest, write_summary, CompactionRecord, Mode, Status};
-use crate::paths::{ensure_vault_paths, manifest_path, VaultPaths};
+use crate::paths::{
+    backup_path, ensure_vault_paths, manifest_path, summary_path, VaultKey, VaultPaths,
+};
 use crate::rollout::{
     ensure_plain_native_session, read_session_head, verify_jsonl, DEFAULT_SCAN_WINDOW,
 };
@@ -80,19 +82,44 @@ pub fn compact_safe_impl_with(path: &Path, options: CompactOptions) -> Result<Co
     };
     let source_lock = lock_session(path)?;
     let source_identity = file_identity(&source_lock)?;
-    let before = crate::storage::StorageSnapshot::read(path, &vault)?;
+    let key = VaultKey::for_rollout(path);
+    let native_storage = crate::storage::NativeStorageFile::capture(path)?;
+    let manifest_storage = crate::storage::TrackedStorageFile::capture(
+        crate::storage::StorageFileKind::Manifest,
+        manifest_path(&vault, &key),
+    )?;
+    let summary_storage = crate::storage::TrackedStorageFile::capture(
+        crate::storage::StorageFileKind::Summary,
+        summary_path(&vault, &key),
+    )?;
     let mut result = compact_locked(path, options, &vault, source_identity)?;
     if !options.dry_run {
-        match crate::storage::StorageSnapshot::read(path, &vault) {
-            Ok(after) => {
-                let delta = before.delta(&after);
-                if delta["space_increased"] == true {
+        let mut tracked_storage = Vec::with_capacity(3);
+        match result.status.as_str() {
+            "ok" | "archived_only" => {
+                tracked_storage.push(manifest_storage);
+                tracked_storage.push(summary_storage);
+            }
+            "restored_after_failed_verification" => tracked_storage.push(manifest_storage),
+            _ => {}
+        }
+        if result.stats["recovery_source_created"] == true {
+            if let Some(backup) = result.backup.as_ref() {
+                tracked_storage.push(crate::storage::TrackedStorageFile::assumed_new(
+                    crate::storage::StorageFileKind::Backup,
+                    backup,
+                ));
+            }
+        }
+        match crate::storage::operation_storage_report(&[native_storage], &tracked_storage) {
+            Ok(storage) => {
+                if storage["space_increased"] == true {
                     result.reason.push(
                         "Total storage increased after including retained backups and journals."
                             .into(),
                     );
                 }
-                result.stats["storage"] = delta;
+                result.stats["storage"] = storage;
             }
             Err(err) => result.reason.push(format!(
                 "Operation finished, but storage accounting failed: {err}"
@@ -223,6 +250,11 @@ fn compact_locked(
 
     // The analysis pass establishes the expected source hash. Backup creation compresses that
     // state and then re-hashes the live source once more to close the append-after-EOF race.
+    let immutable_backup_existed = journal
+        .manifest
+        .as_ref()
+        .map(|manifest| manifest.original.backup_path.is_file())
+        .unwrap_or_else(|| backup_path(vault, &journal.key).is_file());
     let backup = ensure_backup_for_compaction(
         path,
         &journal.key,
@@ -230,6 +262,8 @@ fn compact_locked(
         &analysis.content_sha256,
         journal.manifest.as_ref(),
     )?;
+    let recovery_source_created =
+        backup.restore.backup_path != backup.original.backup_path || !immutable_backup_existed;
     let current_input_sha = backup.restore.source_sha256.clone();
     let current_input_size = backup.restore.source_size;
     if current_input_sha != analysis.content_sha256 {
@@ -276,7 +310,9 @@ fn compact_locked(
             manifest: None,
             backup: Some(backup.restore.backup_path),
             reason: compact_issues,
-            stats: json!({}),
+            stats: json!({
+                "recovery_source_created": recovery_source_created,
+            }),
         });
     }
 
@@ -413,6 +449,7 @@ fn compact_locked(
                     stats: json!({
                         "failed_active_sha256": active_sha,
                         "restored_sha256": restored_active_sha,
+                        "recovery_source_created": recovery_source_created,
                     }),
                 });
             }
@@ -466,6 +503,7 @@ fn compact_locked(
                 "result_size": result_size,
                 "reduction_this_operation_percent": reduction_this_operation,
                 "reduction_from_original_percent": reduction_from_original,
+                "recovery_source_created": recovery_source_created,
             }),
         })
     })()

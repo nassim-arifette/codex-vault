@@ -18,7 +18,7 @@ pub(super) struct Cli {
     #[arg(long, global = true, conflicts_with = "json")]
     pub(super) human: bool,
 
-    /// Worker threads for the read-only batch commands (`analyze`, `doctor`). `compact`
+    /// Worker threads for the read-only batch commands (`scan`, `analyze`, `doctor`). `compact`
     /// is always serial.
     #[arg(long, global = true, default_value_t = default_jobs())]
     pub(super) jobs: usize,

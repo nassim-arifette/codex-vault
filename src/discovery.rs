@@ -1,12 +1,13 @@
 //! Locating sessions on disk and resolving user-supplied references.
 
 use crate::error::{Result, VaultError};
+use crate::parallel::map_ordered;
 use crate::paths::{
     codex_root, is_path_related, is_path_within, normalized_path, strip_verbatim_prefix,
 };
 use crate::rollout::{
-    is_codex_zstd_jsonl, is_plain_jsonl, read_session_head, rollout_stem, strip_rollout_extension,
-    SessionIdSource,
+    is_codex_zstd_jsonl, is_plain_jsonl, read_session_head, read_session_head_from_file,
+    rollout_stem, strip_rollout_extension, SessionIdSource,
 };
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -53,12 +54,30 @@ pub fn discover_sessions(cwd_filter: Option<&Path>) -> Result<Vec<SessionInfo>> 
     discover_sessions_scoped(cwd_filter, FilterScope::Related)
 }
 
+/// Discovery variant for latency-sensitive read-only commands. Directory enumeration stays
+/// serial and deterministic, while independent rollout-head reads may run concurrently.
+pub fn discover_sessions_with_jobs(
+    cwd_filter: Option<&Path>,
+    scope: FilterScope,
+    jobs: usize,
+) -> Result<Vec<SessionInfo>> {
+    discover_sessions_scoped_with_jobs(cwd_filter, scope, jobs)
+}
+
 pub fn discover_sessions_scoped(
     cwd_filter: Option<&Path>,
     scope: FilterScope,
 ) -> Result<Vec<SessionInfo>> {
-    let mut items = Vec::new();
+    discover_sessions_scoped_with_jobs(cwd_filter, scope, 1)
+}
+
+fn discover_sessions_scoped_with_jobs(
+    cwd_filter: Option<&Path>,
+    scope: FilterScope,
+    jobs: usize,
+) -> Result<Vec<SessionInfo>> {
     let titles = session_titles();
+    let mut candidates = Vec::new();
     for source in ["sessions", "archived_sessions"] {
         let base = codex_root().join(source);
         if !base.exists() {
@@ -69,34 +88,52 @@ pub fn discover_sessions_scoped(
             .filter_map(std::result::Result::ok)
         {
             let path = entry.path();
-            if !path.is_file() || (!is_plain_jsonl(path) && !is_codex_zstd_jsonl(path)) {
+            // WalkDir already resolved the entry type. Calling `Path::is_file()` here performs a
+            // second metadata lookup per rollout on Windows before the later metadata read.
+            if !entry.file_type().is_file() || (!is_plain_jsonl(path) && !is_codex_zstd_jsonl(path))
+            {
                 continue;
             }
-            let head = match read_session_head(path) {
-                Ok(v) => v,
-                Err(_) => continue,
+            candidates.push((path.to_path_buf(), source));
+        }
+    }
+
+    let rows = map_ordered(
+        &candidates,
+        jobs,
+        |_, (path, source)| -> Result<Option<SessionInfo>> {
+            let file = match fs::File::open(path) {
+                Ok(file) => file,
+                Err(_) => return Ok(None),
             };
+            // Preserve the historical error contract: unreadable/malformed heads are skipped,
+            // while metadata errors for an otherwise readable session abort discovery.
+            let metadata = file.metadata();
+            let head = match read_session_head_from_file(path, file) {
+                Ok(v) => v,
+                Err(_) => return Ok(None),
+            };
+            let metadata =
+                metadata.map_err(|e| VaultError::io("reading session metadata", path, e))?;
             if let Some(filter) = cwd_filter {
                 let Some(hint) = head.cwd_hint.as_deref() else {
-                    continue;
+                    return Ok(None);
                 };
                 let keep = match scope {
                     FilterScope::Related => is_path_related(Path::new(hint), filter),
                     FilterScope::Within => is_path_within(Path::new(hint), filter),
                 };
                 if !keep {
-                    continue;
+                    return Ok(None);
                 }
             }
-            let metadata = fs::metadata(path)
-                .map_err(|e| VaultError::io("reading session metadata", path, e))?;
             let modified_at = metadata
                 .modified()
                 .map_err(|e| VaultError::io("reading session mtime", path, e))?
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            items.push(SessionInfo {
+            Ok(Some(SessionInfo {
                 title: titles.get(&head.session_id).cloned(),
                 session_id: head.session_id,
                 session_id_source: head.id_source,
@@ -112,16 +149,23 @@ pub fn discover_sessions_scoped(
                 source: if is_codex_zstd_jsonl(path) {
                     format!("{source}:zstd")
                 } else {
-                    source.to_string()
+                    (*source).to_string()
                 },
-            });
+            }))
+        },
+    );
+
+    let mut items = Vec::with_capacity(rows.len());
+    for row in rows {
+        if let Some(item) = row? {
+            items.push(item);
         }
     }
     items.sort_by_key(|s| std::cmp::Reverse(s.modified_at));
     Ok(items)
 }
 
-fn session_titles() -> HashMap<String, String> {
+pub(crate) fn session_titles() -> HashMap<String, String> {
     let mut titles = HashMap::new();
     if let Ok(file) = fs::File::open(codex_root().join("session_index.jsonl")) {
         for line in BufReader::new(file)
@@ -146,6 +190,67 @@ pub struct LineageSuccessor {
     pub path: PathBuf,
     /// Byte offset into the *source* page that this one continues from.
     pub end_byte_offset: Option<u64>,
+}
+
+/// Snapshot of pagination successor relationships for the current Codex catalog.
+///
+/// Batch diagnostics build this once and reuse it for every rollout instead of recursively
+/// walking the whole sessions tree once per target. The snapshot is intentionally ephemeral: a
+/// destructive operation that needs lineage freshness still calls `lineage_successors` directly.
+#[derive(Default)]
+pub(crate) struct LineageIndex {
+    successors: HashMap<(String, String), Vec<LineageSuccessor>>,
+}
+
+impl LineageIndex {
+    pub(crate) fn discover() -> Self {
+        let mut index = LineageIndex::default();
+        for source in ["sessions", "archived_sessions"] {
+            let base = codex_root().join(source);
+            if !base.exists() {
+                continue;
+            }
+            for entry in WalkDir::new(&base)
+                .into_iter()
+                .filter_map(std::result::Result::ok)
+            {
+                let path = entry.path();
+                if !entry.file_type().is_file()
+                    || (!is_plain_jsonl(path) && !is_codex_zstd_jsonl(path))
+                {
+                    continue;
+                }
+                let Ok(head) = read_session_head(path) else {
+                    continue;
+                };
+                let Some(base_ref) = head.provenance.history_base.as_ref() else {
+                    continue;
+                };
+                let Some(predecessor_page_id) = base_ref.thread_id.as_ref() else {
+                    continue;
+                };
+                index
+                    .successors
+                    .entry((head.session_id, predecessor_page_id.clone()))
+                    .or_default()
+                    .push(LineageSuccessor {
+                        path: path.to_path_buf(),
+                        end_byte_offset: base_ref.end_byte_offset,
+                    });
+            }
+        }
+        for successors in index.successors.values_mut() {
+            successors.sort_by(|a, b| a.path.cmp(&b.path));
+        }
+        index
+    }
+
+    pub(crate) fn successors(&self, thread_id: &str, page_id: &str) -> &[LineageSuccessor] {
+        self.successors
+            .get(&(thread_id.to_string(), page_id.to_string()))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]

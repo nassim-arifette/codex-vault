@@ -53,11 +53,15 @@ pub fn rollout_stem(path: &Path) -> String {
 }
 
 pub fn open_rollout_reader(path: &Path) -> Result<Box<dyn BufRead>> {
+    open_rollout_reader_from_file(path, File::open(path)?)
+}
+
+fn open_rollout_reader_from_file(path: &Path, file: File) -> Result<Box<dyn BufRead>> {
     if is_codex_zstd_jsonl(path) {
-        let decoder = Decoder::new(File::open(path)?)?;
+        let decoder = Decoder::new(file)?;
         return Ok(Box::new(BufReader::new(decoder)));
     }
-    Ok(Box::new(BufReader::new(File::open(path)?)))
+    Ok(Box::new(BufReader::new(file)))
 }
 
 pub fn ensure_plain_native_session(path: &Path) -> Result<()> {
@@ -123,8 +127,19 @@ pub fn page_id(path: &Path, session_id: &str) -> String {
 }
 
 pub fn read_session_head(path: &Path) -> Result<SessionHead> {
-    let file_stem = rollout_stem(path);
     let mut reader = open_rollout_reader(path)?;
+    read_session_head_from_reader(path, reader.as_mut())
+}
+
+/// Parse a session head from an already-open file. Catalog discovery uses this to get file
+/// metadata from the same handle instead of paying another path lookup on Windows.
+pub(crate) fn read_session_head_from_file(path: &Path, file: File) -> Result<SessionHead> {
+    let mut reader = open_rollout_reader_from_file(path, file)?;
+    read_session_head_from_reader(path, reader.as_mut())
+}
+
+fn read_session_head_from_reader(path: &Path, reader: &mut dyn BufRead) -> Result<SessionHead> {
+    let file_stem = rollout_stem(path);
     let mut line = String::new();
     let mut seen = 0usize;
     let mut session_id: Option<String> = None;

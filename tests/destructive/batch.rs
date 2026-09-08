@@ -42,6 +42,91 @@ fn parallel_and_serial_batches_produce_identical_output() {
 }
 
 #[test]
+fn doctor_batch_preserves_paginated_lineage_findings() {
+    let sb = Sandbox::new();
+    let root = lineage_page(&sb, "rollout-doctor-thr.jsonl", "doctor-thr", None, "ROOT");
+    let root_size = fs::metadata(&root).unwrap().len();
+    let _tail = lineage_page(
+        &sb,
+        "rollout-doctor-thr_page2.jsonl",
+        "doctor-thr",
+        Some(("doctor-thr", root_size + 1)),
+        "TAIL",
+    );
+
+    let out = doctor_command(None, None, false, quiet_batch(4)).unwrap();
+    let rows = out.as_array().unwrap();
+    let root_row = rows
+        .iter()
+        .find(|row| {
+            row["session_path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("rollout-doctor-thr.jsonl"))
+        })
+        .unwrap();
+    let tail_row = rows
+        .iter()
+        .find(|row| {
+            row["session_path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("rollout-doctor-thr_page2.jsonl"))
+        })
+        .unwrap();
+    assert_eq!(root_row["lineage_broken"], true, "{root_row:#?}");
+    assert_eq!(root_row["status"], "warning");
+    assert_eq!(tail_row["lineage_broken"], false, "{tail_row:#?}");
+}
+
+#[test]
+fn batch_prune_keeps_global_fail_closed_audit_but_removes_temp_debris() {
+    let sb = Sandbox::new();
+    let mut sessions = Vec::new();
+    for i in 0..3 {
+        let session = sb.compactable_session(
+            &format!("rollout-prune-batch-{i}.jsonl"),
+            &format!("prune-batch-{i}"),
+            "C:/work/prune-batch",
+        );
+        archive_impl(&session, false).unwrap();
+        sessions.push(session);
+    }
+
+    let vault = ensure_vault_paths().unwrap();
+    let orphan = vault
+        .backups
+        .join("rollout-prune-batch-0.snapshot-orphan.jsonl.zst");
+    fs::write(&orphan, b"not a recovery source").unwrap();
+    fs::write(vault.manifests.join("broken-global.json"), b"{ broken").unwrap();
+
+    let temps: Vec<_> = sessions
+        .iter()
+        .map(|session| {
+            let temp = session.with_file_name(format!(
+                "{}.compact.1.tmp",
+                session.file_name().unwrap().to_string_lossy()
+            ));
+            fs::write(&temp, b"debris").unwrap();
+            temp
+        })
+        .collect();
+
+    let result = prune_command(None, None, true, true).unwrap();
+    let rows = result["sessions"].as_array().unwrap();
+    assert_eq!(rows.len(), sessions.len());
+    assert!(
+        orphan.exists(),
+        "an unreadable journal must block backup deletion"
+    );
+    assert!(temps.iter().all(|path| !path.exists()));
+    assert!(rows.iter().all(|row| {
+        row["note"]
+            .as_str()
+            .is_some_and(|note| note.contains("refusing to delete backups"))
+    }));
+    assert!(rows.iter().all(|row| row["unreferenced_backups"] == 0));
+}
+
+#[test]
 fn a_destructive_batch_never_reaches_a_parent_projects_sessions() {
     let sb = Sandbox::new();
     sb.compactable_session("rollout-s1.jsonl", "sess-here", "C:/work/repo/frontend");

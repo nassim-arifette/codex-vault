@@ -1,12 +1,12 @@
+use super::catalog::CatalogContext;
 use super::shared::{open_journal, Journal};
-use crate::backup::{paths_equal, unreferenced_backups};
+use crate::backup::paths_equal;
 use crate::discovery::lineage_successors;
 use crate::error::{Result, VaultError};
-use crate::fsatomic::stale_temp_files;
 use crate::hashing::{sha256_file, sha256_rollout_prefix};
 use crate::manifest::{CodexVersionSource, Status};
 use crate::paths::{ensure_vault_paths, VaultKey};
-use crate::rollout::{read_session_head, rollout_stem, verify_jsonl};
+use crate::rollout::{read_session_head, verify_jsonl};
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -51,6 +51,19 @@ pub enum DoctorDepth {
 }
 
 pub fn doctor_one(path: &Path, depth: DoctorDepth) -> Result<DoctorCheck> {
+    let vault = ensure_vault_paths()?;
+    // A single-target doctor should not parse every rollout merely to build the batch lineage
+    // index. The direct lineage lookup first filters filenames by thread id before opening heads.
+    // Batch doctor still builds one shared LineageIndex and amortizes that cost across all rows.
+    let context = CatalogContext::build(&vault, &[path.to_path_buf()], true, false);
+    doctor_one_with_context(path, depth, &context)
+}
+
+pub(crate) fn doctor_one_with_context(
+    path: &Path,
+    depth: DoctorDepth,
+    context: &CatalogContext,
+) -> Result<DoctorCheck> {
     let vault = ensure_vault_paths()?;
     let head = read_session_head(path)?;
     let session_id = head.session_id.clone();
@@ -225,7 +238,15 @@ pub fn doctor_one(path: &Path, depth: DoctorDepth) -> Result<DoctorCheck> {
     // A page whose successor points past its end means the thread can no longer be resumed.
     let current_size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     let mut lineage_broken = false;
-    for successor in lineage_successors(&head.session_id, &head.page_id) {
+    let direct_successors;
+    let successors = match context.lineage_successors(&head.session_id, &head.page_id) {
+        Some(successors) => successors,
+        None => {
+            direct_successors = lineage_successors(&head.session_id, &head.page_id);
+            &direct_successors
+        }
+    };
+    for successor in successors {
         if successor.is_broken_by(current_size) {
             lineage_broken = true;
             notes.push(format!(
@@ -236,7 +257,7 @@ pub fn doctor_one(path: &Path, depth: DoctorDepth) -> Result<DoctorCheck> {
     }
 
     // Anything on disk the journal does not know about is a leak, not a spare copy.
-    let unreferenced = match unreferenced_backups(&vault, &journal.keys(), manifest.as_ref()) {
+    let unreferenced = match context.unreferenced_backups(&journal.keys(), manifest.as_ref()) {
         Ok(paths) => paths,
         Err(err) => {
             status = "warning".to_string();
@@ -251,16 +272,7 @@ pub fn doctor_one(path: &Path, depth: DoctorDepth) -> Result<DoctorCheck> {
         ));
     }
 
-    let mut stale = Vec::new();
-    for key in journal.keys() {
-        stale.extend(stale_temp_files(&vault.backups, key.as_str()));
-        stale.extend(stale_temp_files(&vault.manifests, key.as_str()));
-    }
-    if let Some(dir) = path.parent() {
-        stale.extend(stale_temp_files(dir, &rollout_stem(path)));
-    }
-    stale.sort();
-    stale.dedup();
+    let stale = context.stale_temp_files(path, &journal.keys());
     for p in &stale {
         notes.push(format!(
             "leftover temporary file from an interrupted run: {}",

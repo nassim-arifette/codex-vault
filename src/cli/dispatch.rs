@@ -41,7 +41,7 @@ pub(super) fn run_command(command: Command, batch: BatchOptions) -> Result<Value
         } => codex_vault::index::read(&id, cwd.as_deref().map(std::path::Path::new), offset, limit),
         Command::Storage => codex_vault::storage::inventory(),
         Command::Menu { .. } => unreachable!("menu handled before JSON commands"),
-        Command::Scan { cwd, .. } => scan_command(cwd),
+        Command::Scan { cwd, .. } => scan_command(cwd, batch),
         Command::Analyze {
             session,
             session_flag,

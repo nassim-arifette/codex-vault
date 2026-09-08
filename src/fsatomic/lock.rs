@@ -52,7 +52,10 @@ impl MultiMutationGuard {
             let canonical = session
                 .canonicalize()
                 .map_err(|e| VaultError::io("resolving operation lock", session, e))?;
-            let mut identity = crate::paths::normalized_path(&canonical)
+            // `canonicalize` already resolved the path. Calling `normalized_path` here would
+            // canonicalize the same target a second time, which is very costly in 10k-file
+            // batches on Windows and adds no additional identity guarantee.
+            let mut identity = crate::paths::strip_verbatim_prefix(&canonical)
                 .to_string_lossy()
                 .into_owned();
             if cfg!(windows) {
@@ -85,7 +88,7 @@ impl MutationGuard {
         let canonical = session
             .canonicalize()
             .map_err(|e| VaultError::io("resolving operation lock", session, e))?;
-        let identity = crate::paths::normalized_path(&canonical)
+        let identity = crate::paths::strip_verbatim_prefix(&canonical)
             .to_string_lossy()
             .into_owned();
         let identity = if cfg!(windows) {

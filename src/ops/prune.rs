@@ -1,20 +1,73 @@
+use super::catalog::CatalogContext;
 use super::shared::open_journal;
-use crate::backup::unreferenced_backups;
 use crate::error::Result;
-use crate::fsatomic::{stale_temp_files, MutationGuard};
+use crate::fsatomic::{MultiMutationGuard, MutationGuard};
 use crate::paths::{ensure_vault_paths, VaultKey};
-use crate::rollout::{read_session_head, rollout_stem};
+use crate::rollout::read_session_head;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn prune_one(path: &Path, include_backups: bool, apply: bool) -> Result<Value> {
     let vault = ensure_vault_paths()?;
     let _operation = MutationGuard::acquire(&vault.root, path)?;
+    let context = CatalogContext::build(&vault, &[path.to_path_buf()], include_backups, false);
+    let mut removed_in_batch = HashSet::new();
+    prune_one_locked(
+        path,
+        include_backups,
+        apply,
+        &vault,
+        &context,
+        &mut removed_in_batch,
+    )
+}
+
+/// Prune several targets under one catalog snapshot and one vault-wide mutation critical section.
+///
+/// Holding every target path lock before the snapshot is what makes reuse safe for `--apply`: no
+/// Vault writer can change a recovery journal after the all-journals-readable proof but before a
+/// backup is deleted. The old per-row implementation repeated that proof N times.
+pub(crate) fn prune_many(
+    paths: &[PathBuf],
+    include_backups: bool,
+    apply: bool,
+) -> Result<Vec<Value>> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let vault = ensure_vault_paths()?;
+    let _operation = MultiMutationGuard::acquire(&vault.root, paths)?;
+    let context = CatalogContext::build(&vault, paths, include_backups, false);
+    let mut removed_in_batch = HashSet::new();
+    paths
+        .iter()
+        .map(|path| {
+            prune_one_locked(
+                path,
+                include_backups,
+                apply,
+                &vault,
+                &context,
+                &mut removed_in_batch,
+            )
+        })
+        .collect()
+}
+
+fn prune_one_locked(
+    path: &Path,
+    include_backups: bool,
+    apply: bool,
+    vault: &crate::paths::VaultPaths,
+    context: &CatalogContext,
+    removed_in_batch: &mut HashSet<PathBuf>,
+) -> Result<Value> {
     let head = read_session_head(path)?;
     let session_id = head.session_id.clone();
 
-    let journal = open_journal(&vault, path, &session_id);
+    let journal = open_journal(vault, path, &session_id);
     let keys = match &journal {
         Ok(j) => j.keys(),
         Err(_) => vec![
@@ -23,24 +76,23 @@ pub fn prune_one(path: &Path, include_backups: bool, apply: bool) -> Result<Valu
         ],
     };
 
-    let mut targets = Vec::new();
-    for key in &keys {
-        targets.extend(stale_temp_files(&vault.backups, key.as_str()));
-        targets.extend(stale_temp_files(&vault.manifests, key.as_str()));
+    let mut targets = context.stale_temp_files(path, &keys);
+    if apply {
+        targets.retain(|path| !removed_in_batch.contains(path));
     }
-    if let Some(dir) = path.parent() {
-        targets.extend(stale_temp_files(dir, &rollout_stem(path)));
-    }
-    targets.sort();
-    targets.dedup();
     let temp_count = targets.len();
 
     let mut backups = Vec::new();
     let mut manifest_note = None;
     if include_backups {
         match journal.map(|j| j.manifest) {
-            Ok(Some(m)) => match unreferenced_backups(&vault, &keys, Some(&m)) {
-                Ok(paths) => backups = paths,
+            Ok(Some(m)) => match context.unreferenced_backups(&keys, Some(&m)) {
+                Ok(paths) => {
+                    backups = paths;
+                    if apply {
+                        backups.retain(|path| !removed_in_batch.contains(path));
+                    }
+                }
                 Err(err) => {
                     manifest_note = Some(format!(
                         "cannot read every recovery journal ({err}); refusing to delete backups"
@@ -67,7 +119,10 @@ pub fn prune_one(path: &Path, include_backups: bool, apply: bool) -> Result<Valu
     if apply {
         for t in &targets {
             match fs::remove_file(t) {
-                Ok(()) => removed.push(t.clone()),
+                Ok(()) => {
+                    removed.push(t.clone());
+                    removed_in_batch.insert(t.clone());
+                }
                 Err(err) => failed.push(json!({
                     "path": t.to_string_lossy(),
                     "error": err.to_string(),

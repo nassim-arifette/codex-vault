@@ -3,11 +3,8 @@ use crate::discovery::ConversationChain;
 use crate::error::{Result, VaultError};
 use crate::hashing::sha256_file;
 use crate::ops::CompactOptions;
-use crate::paths::VaultPaths;
 use crate::rollout::ensure_plain_native_session;
-use crate::storage::{
-    compressed_size, process_peak_rss_bytes, vault_storage_breakdown, VaultStorageBreakdown,
-};
+use crate::storage::{compressed_size, process_peak_rss_bytes};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
@@ -94,7 +91,6 @@ pub(super) fn build_plans(
 pub(super) fn preview(
     chain: &ConversationChain,
     plans: &[PagePlan],
-    vault: &VaultPaths,
     started: Instant,
 ) -> Result<Value> {
     let native_before: u64 = plans.iter().map(|p| p.input_size).sum();
@@ -121,12 +117,6 @@ pub(super) fn preview(
             "estimated_new_backup_bytes": backup,
         }));
     }
-    let vault = vault_storage_breakdown(vault).unwrap_or(VaultStorageBreakdown {
-        total_bytes: 0,
-        backup_bytes: 0,
-        metadata_bytes: 0,
-        index_bytes: 0,
-    });
     let estimated_net =
         native_before as i128 - estimated_native_after as i128 - estimated_new_backups as i128;
     let runtime_ms = started.elapsed().as_millis();
@@ -137,17 +127,15 @@ pub(super) fn preview(
         "layout": "linear_paginated_chain",
         "pages": rows,
         "storage": {
+            "accounting_version": 2,
+            "scope": "current_operation_preview",
             "measurement": "logical_bytes",
             "native_before_bytes": native_before,
             "estimated_native_after_bytes": estimated_native_after,
             "estimated_new_backup_bytes": estimated_new_backups,
-            "retained_backup_bytes_before": vault.backup_bytes,
-            "recovery_metadata_bytes_before": vault.metadata_bytes,
-            "optional_index_bytes_before": vault.index_bytes,
-            "vault_total_bytes_before": vault.total_bytes,
             "estimated_net_saved_bytes_excluding_metadata_and_history_base_line_size_delta": estimated_net,
             "estimated_peak_temporary_disk_bytes": estimated_native_after,
-            "note": "Dry-run reports persistent backup growth separately from temporary rewrite files and excludes the small serialized session_meta size delta plus transaction-journal scratch. Completed operation reports measured bytes."
+            "note": "Dry-run is operation-scoped: it estimates newly created backups without scanning unrelated Vault files, and excludes manifest/summary/transaction growth plus the small serialized session_meta size delta. Completed operation measures the exact persistent files it touched."
         },
         "performance": {
             "runtime_ms": runtime_ms,

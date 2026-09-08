@@ -35,7 +35,7 @@ fn transactions_dir(vault: &VaultPaths) -> PathBuf {
     vault.root.join("transactions")
 }
 
-fn transaction_path(vault: &VaultPaths, tx: &ChainTransaction) -> PathBuf {
+pub(super) fn transaction_path(vault: &VaultPaths, tx: &ChainTransaction) -> PathBuf {
     transactions_dir(vault).join(format!(
         "chain-{}-{}.json",
         tx.session_id.replace(
